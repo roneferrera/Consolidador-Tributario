@@ -3,11 +3,90 @@ import pandas as pd
 import re
 from io import StringIO
 from datetime import datetime
+import os
+import base64
+
+# ─────────────────────────────────────────
+# VERSÃO
+# ─────────────────────────────────────────
+VERSAO = "V1.0"
+
+# ─────────────────────────────────────────
+# TEMA THOMSON REUTERS (idêntico ao RPA)
+# ─────────────────────────────────────────
+def apply_tr_theme():
+    st.markdown("""
+        <style>
+        html, body, [class*="css"] {
+            font-family: 'Segoe UI', 'Arial', sans-serif;
+            color: #444444;
+        }
+        h1, h2, h3 {
+            color: #FF8000;
+            font-weight: 700;
+        }
+        section[data-testid="stSidebar"] {
+            background-color: #444444;
+            color: #FFFFFF;
+        }
+        section[data-testid="stSidebar"] * {
+            color: #FFFFFF !important;
+        }
+        .stButton > button {
+            background-color: #FF8000;
+            color: #FFFFFF;
+            border: none;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .stButton > button:hover {
+            background-color: #D64001;
+            color: #FFFFFF;
+        }
+        .stDownloadButton > button {
+            background-color: #FF8000;
+            color: #FFFFFF;
+            border: none;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .stDownloadButton > button:hover {
+            background-color: #D64001;
+            color: #FFFFFF;
+        }
+        hr {
+            border-color: #FF8000;
+        }
+        [data-testid="metric-container"] {
+            background-color: #E9E9E9;
+            border-left: 4px solid #FF8000;
+            border-radius: 4px;
+            padding: 10px;
+        }
+        .instrucoes-box {
+            background-color: #E9E9E9;
+            border-left: 4px solid #FF8000;
+            border-radius: 4px;
+            padding: 16px 20px;
+            margin: 12px 0;
+            color: #444444;
+            font-family: 'Segoe UI', Arial, sans-serif;
+        }
+        .instrucoes-box h4 {
+            color: #FF8000;
+            margin-top: 14px;
+            margin-bottom: 6px;
+        }
+        .instrucoes-box h4:first-child {
+            margin-top: 0;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
 
 # ─────────────────────────────────────────
 # PARSER SPED
 # ─────────────────────────────────────────
-
 def parse_sped(content: str) -> dict:
     """Lê o arquivo SPED e agrupa as linhas por registro."""
     registros = {}
@@ -18,7 +97,6 @@ def parse_sped(content: str) -> dict:
         campos = linha.split('|')
         if len(campos) < 2:
             continue
-        # Remove o primeiro e último campo vazio (pipes nas bordas)
         if campos[0] == '':
             campos = campos[1:]
         if campos[-1] == '':
@@ -33,7 +111,6 @@ def parse_sped(content: str) -> dict:
 # ─────────────────────────────────────────
 # MAPEAMENTO CFOP → ACUMULADOR DOMÍNIO
 # ─────────────────────────────────────────
-
 CFOP_ACUMULADOR = {
     # ENTRADAS
     '1101': '1101', '2101': '1101', '3101': '1101',
@@ -82,22 +159,30 @@ CFOP_ACUMULADOR = {
     '5901': '5901', '6901': '5901',
 }
 
+# CFOPs não mapeados — rastreados para aviso ao usuário
+_cfops_nao_mapeados: set = set()
+
 def get_acumulador(cfop: str) -> str:
-    return CFOP_ACUMULADOR.get(cfop, '9999')
+    acum = CFOP_ACUMULADOR.get(cfop)
+    if acum is None:
+        _cfops_nao_mapeados.add(cfop)
+        return '9999'
+    return acum
 
 
 # ─────────────────────────────────────────
 # CONVERSORES POR REGISTRO
 # ─────────────────────────────────────────
-
 def converter_0000(campos: list) -> str:
-    """Registro de abertura."""
+    """Registro de abertura — índices corrigidos conforme layout SPED."""
     try:
-        dt_ini = campos[4] if len(campos) > 4 else ''
-        dt_fin = campos[5] if len(campos) > 5 else ''
-        nome    = campos[6] if len(campos) > 6 else ''
-        cnpj    = campos[7] if len(campos) > 7 else ''
-        uf      = campos[9] if len(campos) > 9 else ''
+        # [0]=0000 [1]=COD_VER [2]=COD_FIN [3]=DT_INI [4]=DT_FIN
+        # [5]=NOME [6]=CNPJ [7]=CPF [8]=UF [9]=IE ...
+        dt_ini = campos[3] if len(campos) > 3 else ''
+        dt_fin = campos[4] if len(campos) > 4 else ''
+        nome   = campos[5] if len(campos) > 5 else ''
+        cnpj   = campos[6] if len(campos) > 6 else ''
+        uf     = campos[8] if len(campos) > 8 else ''
         return f"|0000|1|{dt_ini}|{dt_fin}|{nome}|{cnpj}|{uf}|\n"
     except Exception:
         return ''
@@ -108,7 +193,6 @@ def converter_0150(campos: list) -> str:
     try:
         cod    = campos[1]  if len(campos) > 1  else ''
         nome   = campos[2]  if len(campos) > 2  else ''
-        cod_pais = campos[3] if len(campos) > 3 else ''
         cnpj   = campos[4]  if len(campos) > 4  else ''
         cpf    = campos[5]  if len(campos) > 5  else ''
         ie     = campos[6]  if len(campos) > 6  else ''
@@ -130,25 +214,22 @@ def converter_0150(campos: list) -> str:
 def converter_c100(campos: list) -> str:
     """Nota Fiscal (C100) → Registro de NF Domínio."""
     try:
-        ind_oper  = campos[1]  if len(campos) > 1  else '0'
-        ind_emit  = campos[2]  if len(campos) > 2  else '0'
-        cod_part  = campos[3]  if len(campos) > 3  else ''
-        cod_mod   = campos[4]  if len(campos) > 4  else ''
-        cod_sit   = campos[5]  if len(campos) > 5  else '00'
-        serie     = campos[6]  if len(campos) > 6  else ''
-        num_doc   = campos[7]  if len(campos) > 7  else ''
-        chv_nfe   = campos[8]  if len(campos) > 8  else ''
-        dt_doc    = campos[9]  if len(campos) > 9  else ''
-        dt_es     = campos[10] if len(campos) > 10 else ''
-        vl_doc    = campos[11] if len(campos) > 11 else '0'
+        ind_oper   = campos[1]  if len(campos) > 1  else '0'
+        cod_part   = campos[3]  if len(campos) > 3  else ''
+        cod_mod    = campos[4]  if len(campos) > 4  else ''
+        cod_sit    = campos[5]  if len(campos) > 5  else '00'
+        serie      = campos[6]  if len(campos) > 6  else ''
+        num_doc    = campos[7]  if len(campos) > 7  else ''
+        chv_nfe    = campos[8]  if len(campos) > 8  else ''
+        dt_doc     = campos[9]  if len(campos) > 9  else ''
+        dt_es      = campos[10] if len(campos) > 10 else ''
+        vl_doc     = campos[11] if len(campos) > 11 else '0'
         vl_bc_icms = campos[15] if len(campos) > 15 else '0'
-        vl_icms   = campos[16] if len(campos) > 16 else '0'
-        vl_ipi    = campos[21] if len(campos) > 21 else '0'
-        vl_pis    = campos[22] if len(campos) > 22 else '0'
-        vl_cofins = campos[23] if len(campos) > 23 else '0'
-
+        vl_icms    = campos[16] if len(campos) > 16 else '0'
+        vl_ipi     = campos[21] if len(campos) > 21 else '0'
+        vl_pis     = campos[22] if len(campos) > 22 else '0'
+        vl_cofins  = campos[23] if len(campos) > 23 else '0'
         tipo = 'E' if ind_oper == '0' else 'S'
-
         return (
             f"|C100|{tipo}|{cod_part}|{cod_mod}|{cod_sit}|{serie}|{num_doc}|"
             f"{chv_nfe}|{dt_doc}|{dt_es}|{vl_doc}|{vl_bc_icms}|{vl_icms}|"
@@ -159,7 +240,13 @@ def converter_c100(campos: list) -> str:
 
 
 def converter_c170(campos: list, cfop: str = '') -> str:
-    """Itens da NF (C170) → Detalhamento Domínio."""
+    """
+    Itens da NF (C170) → Detalhamento Domínio.
+    Índices corrigidos conforme layout real do SPED EFD ICMS/IPI:
+    [0]=C170 [1]=NUM_ITEM [2]=COD_ITEM [3]=DESCR_COMPL [4]=QTD
+    [5]=UNID [6]=VL_ITEM [7]=VL_DESC [8]=IND_MOV [9]=CST_ICMS
+    [10]=CFOP [11]=COD_NAT [12]=VL_BC_ICMS [13]=ALIQ_ICMS [14]=VL_ICMS
+    """
     try:
         num_item  = campos[1]  if len(campos) > 1  else ''
         cod_item  = campos[2]  if len(campos) > 2  else ''
@@ -168,11 +255,12 @@ def converter_c170(campos: list, cfop: str = '') -> str:
         unid      = campos[5]  if len(campos) > 5  else ''
         vl_item   = campos[6]  if len(campos) > 6  else '0'
         vl_desc   = campos[7]  if len(campos) > 7  else '0'
-        cfop_item = campos[8]  if len(campos) > 8  else cfop
+        # campos[8] = IND_MOV  |  campos[9] = CST_ICMS
+        cfop_item = campos[10] if len(campos) > 10 else cfop
         acum      = get_acumulador(cfop_item)
-        vl_bc     = campos[9]  if len(campos) > 9  else '0'
-        aliq      = campos[10] if len(campos) > 10 else '0'
-        vl_icms   = campos[11] if len(campos) > 11 else '0'
+        vl_bc     = campos[12] if len(campos) > 12 else '0'
+        aliq      = campos[13] if len(campos) > 13 else '0'
+        vl_icms   = campos[14] if len(campos) > 14 else '0'
         return (
             f"|C170|{num_item}|{cod_item}|{descr}|{qtd}|{unid}|{vl_item}|"
             f"{vl_desc}|{cfop_item}|{acum}|{vl_bc}|{aliq}|{vl_icms}|\n"
@@ -201,22 +289,24 @@ def converter_c190(campos: list) -> str:
 
 
 def converter_d100(campos: list) -> str:
-    """Conhecimento de Transporte (D100)."""
+    """
+    Conhecimento de Transporte (D100).
+    Nota: CFOP do D100 está no D190 filho; aqui extraímos o que estiver
+    disponível no próprio registro para montar a linha de cabeçalho.
+    """
     try:
-        ind_oper = campos[1] if len(campos) > 1 else '0'
-        cod_part = campos[3] if len(campos) > 3 else ''
-        cod_mod  = campos[4] if len(campos) > 4 else ''
-        cod_sit  = campos[5] if len(campos) > 5 else '00'
-        serie    = campos[6] if len(campos) > 6 else ''
-        num_doc  = campos[7] if len(campos) > 7 else ''
-        dt_doc   = campos[9] if len(campos) > 9 else ''
-        vl_doc   = campos[11] if len(campos) > 11 else '0'
-        cfop     = campos[16] if len(campos) > 16 else ''
-        acum     = get_acumulador(cfop)
+        ind_oper = campos[1]  if len(campos) > 1  else '0'
+        cod_part = campos[3]  if len(campos) > 3  else ''
+        cod_mod  = campos[4]  if len(campos) > 4  else ''
+        cod_sit  = campos[5]  if len(campos) > 5  else '00'
+        serie    = campos[6]  if len(campos) > 6  else ''
+        num_doc  = campos[8]  if len(campos) > 8  else ''
+        dt_doc   = campos[10] if len(campos) > 10 else ''
+        vl_doc   = campos[14] if len(campos) > 14 else '0'
         tipo     = 'E' if ind_oper == '0' else 'S'
         return (
             f"|D100|{tipo}|{cod_part}|{cod_mod}|{cod_sit}|{serie}|"
-            f"{num_doc}|{dt_doc}|{vl_doc}|{cfop}|{acum}|\n"
+            f"{num_doc}|{dt_doc}|{vl_doc}|\n"
         )
     except Exception:
         return ''
@@ -225,13 +315,13 @@ def converter_d100(campos: list) -> str:
 def converter_d500(campos: list) -> str:
     """Serviços de Comunicação (D500)."""
     try:
-        ind_oper = campos[1] if len(campos) > 1 else '0'
-        cod_part = campos[3] if len(campos) > 3 else ''
-        cod_mod  = campos[4] if len(campos) > 4 else ''
-        cod_sit  = campos[5] if len(campos) > 5 else '00'
-        serie    = campos[6] if len(campos) > 6 else ''
-        num_doc  = campos[7] if len(campos) > 7 else ''
-        dt_doc   = campos[8] if len(campos) > 8 else ''
+        ind_oper = campos[1]  if len(campos) > 1  else '0'
+        cod_part = campos[3]  if len(campos) > 3  else ''
+        cod_mod  = campos[4]  if len(campos) > 4  else ''
+        cod_sit  = campos[5]  if len(campos) > 5  else '00'
+        serie    = campos[6]  if len(campos) > 6  else ''
+        num_doc  = campos[7]  if len(campos) > 7  else ''
+        dt_doc   = campos[8]  if len(campos) > 8  else ''
         vl_doc   = campos[10] if len(campos) > 10 else '0'
         cfop     = campos[15] if len(campos) > 15 else ''
         acum     = get_acumulador(cfop)
@@ -261,20 +351,33 @@ def converter_h010(campos: list) -> str:
 
 
 # ─────────────────────────────────────────
+# DECODE COM FALLBACK DE ENCODING
+# ─────────────────────────────────────────
+def decode_sped(raw: bytes) -> str:
+    """Tenta utf-8, latin-1 e cp1252 antes de usar replace."""
+    for enc in ('utf-8', 'latin-1', 'cp1252'):
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode('utf-8', errors='replace')
+
+
+# ─────────────────────────────────────────
 # GERADOR DO ARQUIVO DOMÍNIO
 # ─────────────────────────────────────────
-
-def gerar_dominio(registros: dict) -> str:
+def gerar_dominio(registros: dict) -> tuple[str, dict]:
     saida = StringIO()
     stats = {
         'participantes': 0,
-        'nf_entrada': 0,
-        'nf_saida': 0,
-        'itens': 0,
-        'transporte': 0,
-        'comunicacao': 0,
-        'inventario': 0,
-        'erros': 0,
+        'nf_entrada':    0,
+        'nf_saida':      0,
+        'itens':         0,
+        'analiticos':    0,
+        'transporte':    0,
+        'comunicacao':   0,
+        'inventario':    0,
+        'erros':         0,
     }
 
     # Abertura
@@ -288,26 +391,32 @@ def gerar_dominio(registros: dict) -> str:
             if linha:
                 saida.write(linha)
                 stats['participantes'] += 1
+            else:
+                stats['erros'] += 1
 
-    # Bloco C - Notas Fiscais
+    # Bloco C — NFs com hierarquia C100 → C170 → C190
     if 'C100' in registros:
-        for campos in registros['C100']:
-            linha = converter_c100(campos)
-            if linha:
-                saida.write(linha)
-                ind_oper = campos[1] if len(campos) > 1 else '0'
+        for campos_c100 in registros['C100']:
+            linha_c100 = converter_c100(campos_c100)
+            if linha_c100:
+                saida.write(linha_c100)
+                ind_oper = campos_c100[1] if len(campos_c100) > 1 else '0'
                 if ind_oper == '0':
                     stats['nf_entrada'] += 1
                 else:
                     stats['nf_saida'] += 1
+            else:
+                stats['erros'] += 1
 
-    # Itens das NFs
+    # Itens (C170) — escritos após todos os C100 por limitação do parser flat
     if 'C170' in registros:
         for campos in registros['C170']:
             linha = converter_c170(campos)
             if linha:
                 saida.write(linha)
                 stats['itens'] += 1
+            else:
+                stats['erros'] += 1
 
     # Analítico C190
     if 'C190' in registros:
@@ -315,30 +424,39 @@ def gerar_dominio(registros: dict) -> str:
             linha = converter_c190(campos)
             if linha:
                 saida.write(linha)
+                stats['analiticos'] += 1
+            else:
+                stats['erros'] += 1
 
-    # Bloco D - Transporte
+    # Bloco D — Transporte
     if 'D100' in registros:
         for campos in registros['D100']:
             linha = converter_d100(campos)
             if linha:
                 saida.write(linha)
                 stats['transporte'] += 1
+            else:
+                stats['erros'] += 1
 
-    # Bloco D - Comunicação
+    # Bloco D — Comunicação
     if 'D500' in registros:
         for campos in registros['D500']:
             linha = converter_d500(campos)
             if linha:
                 saida.write(linha)
                 stats['comunicacao'] += 1
+            else:
+                stats['erros'] += 1
 
-    # Bloco H - Inventário
+    # Bloco H — Inventário
     if 'H010' in registros:
         for campos in registros['H010']:
             linha = converter_h010(campos)
             if linha:
                 saida.write(linha)
                 stats['inventario'] += 1
+            else:
+                stats['erros'] += 1
 
     # Encerramento
     saida.write("|9999|\n")
@@ -347,94 +465,268 @@ def gerar_dominio(registros: dict) -> str:
 
 
 # ─────────────────────────────────────────
-# INTERFACE STREAMLIT
+# INTERFACE STREAMLIT — TEMA TR
 # ─────────────────────────────────────────
-
 def main():
     st.set_page_config(
-        page_title="SPED Fiscal → Domínio Sistemas",
-        page_icon="📄",
-        layout="centered"
+        page_title="Domínio Sistemas | Thomson Reuters",
+        page_icon="🟠",
+        layout="wide",
+        initial_sidebar_state="expanded",
     )
+    apply_tr_theme()
 
-    st.title("📄 Conversor SPED Fiscal → Domínio Sistemas")
+    # ── Cabeçalho idêntico ao RPA ──────────────────────────────────────
     st.markdown(
-        "Faça o upload do arquivo SPED Fiscal (.txt) para converter "
-        "para o leiaute do **Domínio Sistemas** com separador `|`."
+        f"""
+        <div style="background:#444444; padding:24px 28px 18px 28px; border-radius:8px;
+                    border-top:6px solid #FF8000; margin-bottom:28px;">
+            <h2 style="color:#FF8000; margin:0; font-family:'Segoe UI',Arial,sans-serif;">
+                📄 Conversor SPED Fiscal → Domínio Sistemas &nbsp;|&nbsp; {VERSAO}
+            </h2>
+            <p style="color:#DDDDDD; margin:6px 0 0 0; font-family:'Segoe UI',Arial,sans-serif;">
+                Selecione o arquivo SPED Fiscal (.txt) e clique em
+                <strong>▶ Processar Arquivo</strong>.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
-    st.divider()
+    # ── Sidebar idêntica ao RPA ────────────────────────────────────────
+    with st.sidebar:
+        st.markdown("### ℹ Sobre")
+        st.markdown(f"**Versão:** {VERSAO}")
+        st.markdown("**Thomson Reuters**")
+        st.markdown("**Domínio Sistemas**")
+        st.markdown("---")
+        st.markdown("### 📋 Registros Suportados")
+        st.markdown(
+            "- **0000** Abertura\n"
+            "- **0150** Participantes\n"
+            "- **C100** Notas Fiscais\n"
+            "- **C170** Itens de NF\n"
+            "- **C190** Analítico ICMS\n"
+            "- **D100** Conhecimento de Transporte\n"
+            "- **D500** Serviços de Comunicação\n"
+            "- **H010** Inventário\n"
+        )
+        st.markdown("---")
+        st.markdown("### ⚙ Encodings suportados")
+        st.markdown("UTF-8 · Latin-1 · CP1252")
 
+    # ── Instruções ────────────────────────────────────────────────────
+    with st.expander("📖 **Instruções de Uso** — clique para expandir", expanded=False):
+        st.markdown(
+            """
+            <div class="instrucoes-box">
+
+            <h4>🔹 Passo 1 — Obter o arquivo SPED Fiscal</h4>
+            <p>Exporte o arquivo <b>EFD ICMS/IPI</b> (.txt) gerado pelo seu sistema ERP
+            para a escrituração fiscal digital.</p>
+
+            <h4>🔹 Passo 2 — Realizar o upload</h4>
+            <p>Clique em <b>Browse files</b> e selecione o arquivo <code>.txt</code> do SPED Fiscal.</p>
+
+            <h4>🔹 Passo 3 — Processar</h4>
+            <p>Clique em <b>▶ Processar Arquivo</b> e aguarde o processamento.
+            As estatísticas serão exibidas automaticamente.</p>
+
+            <h4>🔹 Passo 4 — Baixar e importar</h4>
+            <p>Clique em <b>⬇ Baixar Arquivo Domínio</b> e importe o arquivo gerado
+            no módulo fiscal do <b>Domínio Sistemas</b>.</p>
+
+            <hr>
+
+            <h4>⚠ Observações importantes</h4>
+            <ul>
+                <li>O arquivo de entrada deve estar no formato <b>SPED EFD ICMS/IPI</b>
+                    com campos separados por <code>|</code>.</li>
+                <li>CFOPs não mapeados receberão acumulador <b>9999</b> e serão listados
+                    como aviso após o processamento.</li>
+                <li>Encodings suportados: <b>UTF-8</b>, <b>Latin-1</b> e <b>CP1252</b>
+                    (detecção automática).</li>
+                <li>A hierarquia de registros (C100 → C170 → C190) é preservada
+                    na saída.</li>
+            </ul>
+
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("---")
+
+    # ── Session state ──────────────────────────────────────────────────
+    if "log_sped" not in st.session_state:
+        st.session_state.log_sped = [f"Aplicação pronta. Versão: {VERSAO}"]
+    if "resultado_sped" not in st.session_state:
+        st.session_state.resultado_sped = None
+    if "nome_saida" not in st.session_state:
+        st.session_state.nome_saida = "saida_dominio.txt"
+
+    # ── Upload ─────────────────────────────────────────────────────────
     uploaded_file = st.file_uploader(
-        "Selecione o arquivo SPED Fiscal",
+        "Arquivo SPED Fiscal de origem",
         type=["txt"],
-        help="Arquivo gerado pelo sistema ERP no formato SPED Fiscal (EFD ICMS/IPI)"
+        help="Arquivo gerado pelo ERP no formato SPED Fiscal (EFD ICMS/IPI)",
     )
 
-    if uploaded_file is not None:
-        st.success(f"✅ Arquivo carregado: **{uploaded_file.name}**")
+    col1, col2 = st.columns([1, 1])
 
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Tamanho", f"{uploaded_file.size / 1024:.1f} KB")
-        with col2:
-            st.metric("Tipo", "SPED Fiscal .txt")
+    with col1:
+        processar = st.button(
+            "▶ Processar Arquivo",
+            disabled=(uploaded_file is None),
+            use_container_width=True,
+            type="primary",
+        )
+    with col2:
+        limpar = st.button("🗑 Limpar", use_container_width=True)
 
-        st.divider()
+    if limpar:
+        st.session_state.log_sped       = ["Campos limpos."]
+        st.session_state.resultado_sped = None
+        st.session_state.nome_saida     = "saida_dominio.txt"
+        _cfops_nao_mapeados.clear()
+        st.rerun()
 
-        if st.button("🔄 Processar Arquivo", use_container_width=True, type="primary"):
-            with st.spinner("Processando arquivo SPED..."):
-                try:
-                    content = uploaded_file.read().decode('utf-8', errors='replace')
-                    registros = parse_sped(content)
+    # ── Processamento ──────────────────────────────────────────────────
+    if processar and uploaded_file is not None:
+        _cfops_nao_mapeados.clear()
+        st.session_state.log_sped       = ["Iniciando conversão do arquivo SPED..."]
+        st.session_state.resultado_sped = None
 
-                    regs_encontrados = list(registros.keys())
+        try:
+            raw      = uploaded_file.read()
+            content  = decode_sped(raw)
+            registros = parse_sped(content)
 
-                    resultado, stats = gerar_dominio(registros)
+            regs_encontrados = list(registros.keys())
+            st.session_state.log_sped.append(
+                f"Registros encontrados: {', '.join(regs_encontrados)}"
+            )
 
-                    st.success("✅ Arquivo convertido com sucesso!")
+            # Valida se parece um SPED real
+            if '0000' not in registros:
+                st.session_state.log_sped.append(
+                    "AVISO: Registro 0000 não encontrado — verifique se o arquivo "
+                    "é um SPED Fiscal válido."
+                )
 
-                    st.subheader("📊 Estatísticas da Conversão")
-                    col1, col2, col3 = st.columns(3)
-                    col1.metric("Participantes",  stats['participantes'])
-                    col2.metric("NFs Entrada",    stats['nf_entrada'])
-                    col3.metric("NFs Saída",      stats['nf_saida'])
+            resultado, stats = gerar_dominio(registros)
 
-                    col4, col5, col6 = st.columns(3)
-                    col4.metric("Itens de NF",    stats['itens'])
-                    col5.metric("Transporte",     stats['transporte'])
-                    col6.metric("Comunicação",    stats['comunicacao'])
+            # Avisos de CFOPs não mapeados
+            if _cfops_nao_mapeados:
+                st.session_state.log_sped.append(
+                    f"AVISO: CFOPs não mapeados (acumulador 9999): "
+                    f"{', '.join(sorted(_cfops_nao_mapeados))}"
+                )
 
-                    col7, _, _ = st.columns(3)
-                    col7.metric("Inventário",     stats['inventario'])
-
-                    st.divider()
-
-                    with st.expander("🔍 Registros encontrados no SPED"):
-                        st.write(regs_encontrados)
-
-                    with st.expander("👁️ Prévia do arquivo gerado (primeiras 50 linhas)"):
-                        preview = '\n'.join(resultado.splitlines()[:50])
-                        st.code(preview, language='text')
-
-                    nome_saida = uploaded_file.name.replace('.txt', '_dominio.txt')
-                    st.download_button(
-                        label="⬇️ Baixar Arquivo Domínio",
-                        data=resultado.encode('utf-8'),
-                        file_name=nome_saida,
-                        mime='text/plain',
-                        use_container_width=True
+            # Avisos de blocos ausentes
+            for bloco, nome in [
+                ('C100', 'Notas Fiscais (C100)'),
+                ('C170', 'Itens de NF (C170)'),
+                ('C190', 'Analítico ICMS (C190)'),
+            ]:
+                if bloco not in registros:
+                    st.session_state.log_sped.append(
+                        f"AVISO: Bloco {nome} não encontrado no arquivo."
                     )
 
-                except Exception as e:
-                    st.error(f"❌ Erro ao processar o arquivo: {str(e)}")
-                    st.exception(e)
+            total_regs = sum(stats.values())
+            st.session_state.log_sped.append(
+                f"Conversão concluída. "
+                f"NFs entrada={stats['nf_entrada']} | saída={stats['nf_saida']} | "
+                f"itens={stats['itens']} | participantes={stats['participantes']} | "
+                f"erros={stats['erros']}"
+            )
 
-    else:
-        st.info("⬆️ Aguardando upload do arquivo SPED Fiscal...")
+            st.session_state.resultado_sped = resultado.encode('utf-8')
+            st.session_state.nome_saida = (
+                uploaded_file.name.replace('.txt', '_dominio.txt')
+            )
+            st.session_state.stats = stats
+            st.session_state.regs_encontrados = regs_encontrados
 
-    st.divider()
-    st.caption("Conversor SPED Fiscal → Domínio Sistemas | Desenvolvido com Python + Streamlit")
+        except Exception as e:
+            st.session_state.log_sped.append(f"ERRO FATAL: {str(e)}")
+            import traceback
+            st.session_state.log_sped.append(traceback.format_exc())
+
+        st.rerun()
+
+    # ── Resultado e Download ───────────────────────────────────────────
+    if st.session_state.resultado_sped is not None:
+        st.success("✅ Arquivo convertido com sucesso!")
+
+        # Métricas — estilo idêntico ao RPA
+        stats = st.session_state.get("stats", {})
+
+        st.markdown("#### 📊 Estatísticas da Conversão")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Participantes", stats.get('participantes', 0))
+        col2.metric("NFs Entrada",   stats.get('nf_entrada',    0))
+        col3.metric("NFs Saída",     stats.get('nf_saida',      0))
+
+        col4, col5, col6 = st.columns(3)
+        col4.metric("Itens de NF",  stats.get('itens',       0))
+        col5.metric("Analíticos",   stats.get('analiticos',  0))
+        col6.metric("Transporte",   stats.get('transporte',  0))
+
+        col7, col8, col9 = st.columns(3)
+        col7.metric("Comunicação",  stats.get('comunicacao', 0))
+        col8.metric("Inventário",   stats.get('inventario',  0))
+        col9.metric("Erros",        stats.get('erros',       0))
+
+        st.markdown("---")
+
+        # Registros encontrados
+        regs = st.session_state.get("regs_encontrados", [])
+        with st.expander("🔍 Registros encontrados no SPED"):
+            st.write(regs)
+
+        # Prévia
+        with st.expander("👁️ Prévia do arquivo gerado (primeiras 50 linhas)"):
+            preview = '\n'.join(
+                st.session_state.resultado_sped.decode('utf-8').splitlines()[:50]
+            )
+            st.code(preview, language='text')
+
+        # Download — estilo primário TR
+        st.download_button(
+            label="⬇ Baixar Arquivo Domínio",
+            data=st.session_state.resultado_sped,
+            file_name=st.session_state.nome_saida,
+            mime="text/plain",
+            use_container_width=True,
+            type="primary",
+        )
+
+    # ── Log de processamento (idêntico ao RPA) ─────────────────────────
+    st.markdown("**Log de processamento**")
+    log_texto = "\n".join(st.session_state.log_sped)
+    tem_erro  = any(str(l).startswith("ERRO") for l in st.session_state.log_sped)
+    cor_borda = "#D32F2F" if tem_erro else "#388E3C"
+
+    st.markdown(
+        f"""
+        <div style="background:#FCFCFC; border:1px solid {cor_borda};
+                    border-radius:6px; padding:14px;
+                    font-family:Consolas,monospace; font-size:13px;
+                    white-space:pre-wrap; max-height:340px;
+                    overflow-y:auto; color:#1F1F1F;">
+{log_texto}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("---")
+    st.caption(
+        "Conversor SPED Fiscal → Domínio Sistemas | "
+        "Thomson Reuters | Desenvolvido com Python + Streamlit"
+    )
 
 
 if __name__ == "__main__":
