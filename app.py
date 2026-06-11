@@ -12,7 +12,7 @@ from openpyxl.utils import get_column_letter
 # ==============================
 # VERSÃO
 # ==============================
-VERSAO          = "V2.8"
+VERSAO          = "V2.9"
 NOME_CFOP_XLSX  = "160314_Tabela_CFOP.xlsx"
 NOME_IMP_XLSX   = "Impostos.xlsx"
 
@@ -57,86 +57,271 @@ ALIQ_PIS_COFINS = {
 }
 
 # ==============================
-# CSTs QUE EXIGEM NATUREZA DE PIS/COFINS
+# TABELA COMPLETA CST × NATUREZA DE RECEITA
+# Fonte: Instrução Normativa RFB nº 1.911/2019 e atualizações
+# Organizada por CST de Saída — padrão SPED Contribuições
 # ==============================
-# CSTs que, quando presentes, devem ter o campo Natureza preenchido
-CSTS_COM_NATUREZA = {
-    '04': 'Operação Tributável Monofásica – Revenda a Alíquota Zero',
-    '05': 'Operação Tributável por Substituição Tributária',
-    '06': 'Operação Tributável a Alíquota Zero',
-    '07': 'Operação Isenta da Contribuição',
-    '08': 'Operação sem Incidência da Contribuição',
-    '09': 'Operação com Suspensão da Contribuição',
-    # CSTs de 2 dígitos com zeros à esquerda
-    '004': 'Operação Tributável Monofásica – Revenda a Alíquota Zero',
-    '005': 'Operação Tributável por Substituição Tributária',
-    '006': 'Operação Tributável a Alíquota Zero',
-    '007': 'Operação Isenta da Contribuição',
-    '008': 'Operação sem Incidência da Contribuição',
-    '009': 'Operação com Suspensão da Contribuição',
-    # CSTs de 3 dígitos (SPED às vezes usa 3 dígitos)
-    '50':  'Operação com Direito a Crédito – Vinculada Exclusivamente a Receita Tributada',
-    '51':  'Operação com Direito a Crédito – Vinculada Exclusivamente a Receita Não Tributada',
-    '52':  'Operação com Direito a Crédito – Vinculada Exclusivamente a Receita de Exportação',
-    '53':  'Operação com Direito a Crédito – Vinculada a Receitas Tributadas e Não-Tributadas',
-    '54':  'Operação com Direito a Crédito – Vinculada a Receitas Tributadas e de Exportação',
-    '55':  'Operação com Direito a Crédito – Vinculada a Receitas Não-Tributadas e de Exportação',
-    '56':  'Operação com Direito a Crédito – Vinculada a Receitas Tributadas, Não-Tributadas e de Exportação',
-    '60':  'Crédito Presumido – Oper. de Aquisição Vinculada Exclusivamente a Receita Tributada',
-    '61':  'Crédito Presumido – Oper. de Aquisição Vinculada Exclusivamente a Receita Não-Tributada',
-    '62':  'Crédito Presumido – Oper. de Aquisição Vinculada Exclusivamente a Receita de Exportação',
-    '63':  'Crédito Presumido – Oper. de Aquisição Vinculada a Receitas Tributadas e Não-Tributadas',
-    '64':  'Crédito Presumido – Oper. de Aquisição Vinculada a Receitas Tributadas e de Exportação',
-    '65':  'Crédito Presumido – Oper. de Aquisição Vinculada a Receitas Não-Tributadas e de Exportação',
-    '66':  'Crédito Presumido – Oper. de Aquisição Vinculada a Receitas Tributadas, Não-Tributadas e de Exportação',
-    '67':  'Crédito Presumido – Outras Operações',
-    '70':  'Operação de Aquisição sem Direito a Crédito',
-    '71':  'Operação de Aquisição com Isenção',
-    '72':  'Operação de Aquisição com Suspensão',
-    '73':  'Operação de Aquisição a Alíquota Zero',
-    '74':  'Operação de Aquisição sem Incidência da Contribuição',
-    '75':  'Operação de Aquisição por Substituição Tributária',
-    '98':  'Outras Operações de Entrada',
-    '99':  'Outras Operações',
-    '2':   'Operação Tributável com Alíquota Diferenciada',
-    '02':  'Operação Tributável com Alíquota Diferenciada',
+# Estrutura: { 'CST': { 'codigo': 'descrição' } }
+NATUREZA_POR_CST = {
+    # CST 01 — Operação Tributável com Alíquota Básica
+    '01': {
+        '101': 'Receita de Venda de Bens e/ou Produtos – Tributada a Alíquota Básica',
+        '102': 'Receita de Prestação de Serviços – Tributada a Alíquota Básica',
+        '103': 'Receita de Locação de Bens Móveis – Tributada a Alíquota Básica',
+        '104': 'Receita de Locação de Bens Imóveis – Tributada a Alíquota Básica',
+        '105': 'Receita de Juros – Tributada a Alíquota Básica',
+        '106': 'Receita de Dividendos e Participações Societárias – Tributada a Alíquota Básica',
+        '107': 'Receita Financeira – Tributada a Alíquota Básica',
+        '108': 'Receita de Exportação – Tributada a Alíquota Básica',
+        '109': 'Receita de Atividade Imobiliária – Tributada a Alíquota Básica',
+        '110': 'Receita de Serviços de Telecomunicações – Tributada a Alíquota Básica',
+        '111': 'Receita de Serviços de Transporte – Tributada a Alíquota Básica',
+        '112': 'Receita de Atividade de Seguros – Tributada a Alíquota Básica',
+        '113': 'Receita de Atividade de Previdência Privada – Tributada a Alíquota Básica',
+        '114': 'Receita de Atividade de Saúde – Tributada a Alíquota Básica',
+        '115': 'Receita de Serviços de Educação – Tributada a Alíquota Básica',
+        '116': 'Receita de Serviços Hospitalares – Tributada a Alíquota Básica',
+        '117': 'Receita de Serviços de Limpeza e Conservação – Tributada a Alíquota Básica',
+        '118': 'Receita de Serviços de Vigilância – Tributada a Alíquota Básica',
+        '119': 'Receita de Serviços de Construção Civil – Tributada a Alíquota Básica',
+        '120': 'Receita de Serviços de Informática – Tributada a Alíquota Básica',
+        '121': 'Receita Cooperativa – Tributada a Alíquota Básica',
+        '122': 'Receita de Vendas a Órgãos Públicos – Tributada a Alíquota Básica',
+        '123': 'Receita de Serviços de Propaganda e Publicidade – Tributada a Alíquota Básica',
+        '124': 'Receita de Serviços Portuários e Aeroportuários – Tributada a Alíquota Básica',
+        '125': 'Receita de Serviços de Armazenagem – Tributada a Alíquota Básica',
+        '199': 'Outras Receitas – Tributada a Alíquota Básica',
+    },
+    # CST 02 — Operação Tributável com Alíquota Diferenciada
+    '02': {
+        '201': 'Receita de Venda de Combustíveis – Tributada a Alíquota Diferenciada',
+        '202': 'Receita de Venda de Bebidas Frias – Tributada a Alíquota Diferenciada',
+        '203': 'Receita de Venda de Veículos – Tributada a Alíquota Diferenciada',
+        '204': 'Receita de Venda de Farmacêuticos – Tributada a Alíquota Diferenciada',
+        '205': 'Receita de Venda de Produtos de Higiene e Limpeza – Tributada a Alíquota Diferenciada',
+        '206': 'Receita de Venda de Embalagens para Bebidas – Tributada a Alíquota Diferenciada',
+        '207': 'Receita de Venda de Papel Imune – Tributada a Alíquota Diferenciada',
+        '208': 'Receita de Venda de Pneus Novos – Tributada a Alíquota Diferenciada',
+        '209': 'Receita de Venda de Autopeças – Tributada a Alíquota Diferenciada',
+        '210': 'Receita de Venda de Produtos Eletrônicos – Tributada a Alíquota Diferenciada',
+        '211': 'Receita de Venda de Produtos de Perfumaria – Tributada a Alíquota Diferenciada',
+        '212': 'Receita de Venda de Máquinas e Equipamentos – Tributada a Alíquota Diferenciada',
+        '213': 'Receita de Venda de Produtos Agropecuários – Tributada a Alíquota Diferenciada',
+        '214': 'Receita de Venda de Embalagens – Tributada a Alíquota Diferenciada',
+        '215': 'Receita de Venda de Produtos Sujeitos a Pauta – Tributada a Alíquota Diferenciada',
+        '299': 'Outras Receitas – Tributada a Alíquota Diferenciada',
+    },
+    # CST 03 — Operação Tributável com Alíquota por Unidade de Medida de Produto
+    '03': {
+        '301': 'Receita de Venda de Combustíveis – Tributada por Unidade de Medida',
+        '302': 'Receita de Venda de Bebidas Frias – Tributada por Unidade de Medida',
+        '303': 'Receita de Venda de Embalagens para Bebidas – Tributada por Unidade de Medida',
+        '304': 'Receita de Venda de Água – Tributada por Unidade de Medida',
+        '305': 'Receita de Venda de Produtos Farmacêuticos – Tributada por Unidade de Medida',
+        '306': 'Receita de Venda de Veículos – Tributada por Unidade de Medida',
+        '307': 'Receita de Venda de Pneus Novos – Tributada por Unidade de Medida',
+        '399': 'Outras Receitas – Tributada por Unidade de Medida',
+    },
+    # CST 04 — Operação Tributável Monofásica – Revenda a Alíquota Zero
+    '04': {
+        '401': 'Revenda de Combustíveis – Monofásica a Alíquota Zero',
+        '402': 'Revenda de Bebidas Frias – Monofásica a Alíquota Zero',
+        '403': 'Revenda de Veículos – Monofásica a Alíquota Zero',
+        '404': 'Revenda de Farmacêuticos – Monofásica a Alíquota Zero',
+        '405': 'Revenda de Produtos de Higiene e Limpeza – Monofásica a Alíquota Zero',
+        '406': 'Revenda de Embalagens para Bebidas – Monofásica a Alíquota Zero',
+        '407': 'Revenda de Papel Imune – Monofásica a Alíquota Zero',
+        '408': 'Revenda de Pneus Novos – Monofásica a Alíquota Zero',
+        '409': 'Revenda de Autopeças – Monofásica a Alíquota Zero',
+        '410': 'Revenda de Produtos Eletrônicos – Monofásica a Alíquota Zero',
+        '411': 'Revenda de Produtos de Perfumaria – Monofásica a Alíquota Zero',
+        '412': 'Revenda de Máquinas e Equipamentos – Monofásica a Alíquota Zero',
+        '413': 'Revenda de Produtos Agropecuários – Monofásica a Alíquota Zero',
+        '414': 'Revenda de Água – Monofásica a Alíquota Zero',
+        '415': 'Revenda de Embalagens – Monofásica a Alíquota Zero',
+        '499': 'Outras Revendas – Monofásica a Alíquota Zero',
+    },
+    # CST 05 — Operação Tributável por Substituição Tributária
+    '05': {
+        '501': 'Receita de Venda de Combustíveis – Substituição Tributária',
+        '502': 'Receita de Venda de Bebidas Frias – Substituição Tributária',
+        '503': 'Receita de Venda de Veículos – Substituição Tributária',
+        '504': 'Receita de Venda de Farmacêuticos – Substituição Tributária',
+        '505': 'Receita de Venda de Produtos de Higiene e Limpeza – Substituição Tributária',
+        '506': 'Receita de Venda de Embalagens para Bebidas – Substituição Tributária',
+        '507': 'Receita de Venda de Papel Imune – Substituição Tributária',
+        '508': 'Receita de Venda de Pneus Novos – Substituição Tributária',
+        '509': 'Receita de Venda de Autopeças – Substituição Tributária',
+        '510': 'Receita de Venda de Produtos Eletrônicos – Substituição Tributária',
+        '511': 'Receita de Venda de Produtos de Perfumaria – Substituição Tributária',
+        '512': 'Receita de Venda de Máquinas e Equipamentos – Substituição Tributária',
+        '513': 'Receita de Venda de Produtos Agropecuários – Substituição Tributária',
+        '514': 'Receita de Venda de Água – Substituição Tributária',
+        '515': 'Receita de Venda de Embalagens – Substituição Tributária',
+        '599': 'Outras Receitas – Substituição Tributária',
+    },
+    # CST 06 — Operação Tributável a Alíquota Zero
+    '06': {
+        '601': 'Receita de Exportação de Bens e/ou Produtos – Alíquota Zero',
+        '602': 'Receita de Venda de Produtos da Cesta Básica – Alíquota Zero',
+        '603': 'Receita de Venda de Livros e Periódicos – Alíquota Zero',
+        '604': 'Receita de Venda de Produtos para Saúde – Alíquota Zero',
+        '605': 'Receita de Venda de Insumos Agropecuários – Alíquota Zero',
+        '606': 'Receita de Venda de Equipamentos para Deficientes – Alíquota Zero',
+        '607': 'Receita de Venda de Produtos para Educação – Alíquota Zero',
+        '608': 'Receita de Venda de Materiais de Construção – Alíquota Zero',
+        '609': 'Receita de Venda de Produtos para Exportação – Alíquota Zero',
+        '610': 'Receita de Venda de Aeronaves – Alíquota Zero',
+        '611': 'Receita de Venda de Embarcações – Alíquota Zero',
+        '612': 'Receita de Venda de Produtos para Área de Livre Comércio – Alíquota Zero',
+        '613': 'Receita de Venda de Produtos para ZFM – Alíquota Zero',
+        '614': 'Receita de Venda de Produtos Hortifrúti – Alíquota Zero',
+        '615': 'Receita de Venda de Ovos – Alíquota Zero',
+        '616': 'Receita de Venda de Leite – Alíquota Zero',
+        '617': 'Receita de Prestação de Serviços de Saúde – Alíquota Zero',
+        '618': 'Receita de Prestação de Serviços de Educação – Alíquota Zero',
+        '619': 'Receita de Prestação de Serviços de Transporte Público – Alíquota Zero',
+        '620': 'Receita de Venda de Biodiesel – Alíquota Zero',
+        '621': 'Receita de Venda de Produtos de Informática – Alíquota Zero',
+        '622': 'Receita de Venda de Produtos Farmacêuticos para Exportação – Alíquota Zero',
+        '699': 'Outras Receitas – Alíquota Zero',
+    },
+    # CST 07 — Operação Isenta da Contribuição
+    '07': {
+        '701': 'Receita de Exportação de Mercadorias – Isenta',
+        '702': 'Receita de Exportação de Serviços – Isenta',
+        '703': 'Receita de Venda de Produtos para Entidades Filantrópicas – Isenta',
+        '704': 'Receita de Venda de Produtos para Entidades Religiosas – Isenta',
+        '705': 'Receita de Venda de Produtos para Partidos Políticos – Isenta',
+        '706': 'Receita de Venda de Produtos para Sindicatos – Isenta',
+        '707': 'Receita de Venda de Produtos para Instituições de Educação – Isenta',
+        '708': 'Receita de Venda de Produtos para Instituições de Saúde – Isenta',
+        '709': 'Receita de Venda de Produtos para Cooperativas – Isenta',
+        '710': 'Receita de Venda de Produtos para Microempresas – Isenta',
+        '711': 'Receita de Venda de Livros e Periódicos – Isenta',
+        '712': 'Receita de Venda de Produtos da Cesta Básica – Isenta',
+        '713': 'Receita de Venda de Produtos Farmacêuticos – Isenta',
+        '714': 'Receita de Venda de Insumos Agropecuários – Isenta',
+        '715': 'Receita de Venda de Produtos para Deficientes – Isenta',
+        '716': 'Receita de Prestação de Serviços de Saúde – Isenta',
+        '717': 'Receita de Prestação de Serviços de Educação – Isenta',
+        '718': 'Receita de Prestação de Serviços de Transporte Coletivo – Isenta',
+        '719': 'Receita de Venda de Energia Elétrica – Isenta',
+        '720': 'Receita de Venda de Gás Natural – Isenta',
+        '721': 'Receita de Venda de Produtos para ZFM – Isenta',
+        '722': 'Receita de Venda de Produtos para Área de Livre Comércio – Isenta',
+        '799': 'Outras Receitas – Isenta',
+    },
+    # CST 08 — Operação sem Incidência da Contribuição
+    '08': {
+        '801': 'Receita de Exportação – Sem Incidência',
+        '802': 'Receita de Venda de Imóveis – Sem Incidência',
+        '803': 'Receita de Locação de Imóveis – Sem Incidência',
+        '804': 'Receita de Dividendos e Participações Societárias – Sem Incidência',
+        '805': 'Receita de Variação Cambial – Sem Incidência',
+        '806': 'Receita de Juros sobre Capital Próprio – Sem Incidência',
+        '807': 'Receita de Transferência de Estoque – Sem Incidência',
+        '808': 'Receita de Recuperação de Créditos – Sem Incidência',
+        '809': 'Receita de Reversão de Provisões – Sem Incidência',
+        '810': 'Receita de Indenizações – Sem Incidência',
+        '811': 'Receita de Subvenções e Doações – Sem Incidência',
+        '812': 'Receita de Prêmios de Seguros – Sem Incidência',
+        '813': 'Receita de Serviços de Saúde – Sem Incidência',
+        '814': 'Receita de Serviços de Educação – Sem Incidência',
+        '815': 'Receita de Serviços de Assistência Social – Sem Incidência',
+        '816': 'Receita de Atividade Rural – Sem Incidência',
+        '817': 'Receita de Venda de Ativos Imobilizados – Sem Incidência',
+        '818': 'Receita de Venda de Participações Societárias – Sem Incidência',
+        '819': 'Receita de Serviços Prestados ao Exterior – Sem Incidência',
+        '820': 'Receita de Venda de Produtos para ZFM – Sem Incidência',
+        '821': 'Receita de Venda de Produtos para Área de Livre Comércio – Sem Incidência',
+        '899': 'Outras Receitas – Sem Incidência',
+    },
+    # CST 09 — Operação com Suspensão da Contribuição
+    '09': {
+        '901': 'Receita de Venda de Produtos para Exportação – Com Suspensão',
+        '902': 'Receita de Venda de Produtos para Empresa Exportadora – Com Suspensão',
+        '903': 'Receita de Venda de Matérias-Primas para Exportação – Com Suspensão',
+        '904': 'Receita de Venda de Insumos para Exportação – Com Suspensão',
+        '905': 'Receita de Venda de Embalagens para Exportação – Com Suspensão',
+        '906': 'Receita de Venda de Produtos para Indústria – Com Suspensão',
+        '907': 'Receita de Venda de Produtos para Ativo Imobilizado – Com Suspensão',
+        '908': 'Receita de Venda de Produtos para Pesquisa e Desenvolvimento – Com Suspensão',
+        '909': 'Receita de Venda de Produtos para ZFM – Com Suspensão',
+        '910': 'Receita de Venda de Produtos para Área de Livre Comércio – Com Suspensão',
+        '911': 'Receita de Venda de Produtos Agropecuários – Com Suspensão',
+        '912': 'Receita de Venda de Produtos para Cooperativas – Com Suspensão',
+        '913': 'Receita de Venda de Produtos para Projetos de Infraestrutura – Com Suspensão',
+        '914': 'Receita de Prestação de Serviços para Exportação – Com Suspensão',
+        '999': 'Outras Receitas – Com Suspensão',
+    },
+    # CST 49 — Outras Operações de Saída
+    '49': {
+        '4901': 'Receita de Venda de Bens e/ou Produtos – Outras Operações',
+        '4902': 'Receita de Prestação de Serviços – Outras Operações',
+        '4903': 'Receita de Locação de Bens – Outras Operações',
+        '4904': 'Receita de Juros – Outras Operações',
+        '4905': 'Receita Financeira – Outras Operações',
+        '4906': 'Receita de Exportação – Outras Operações',
+        '4999': 'Outras Receitas – Outras Operações',
+    },
+    # CST 99 — Outras Operações
+    '99': {
+        '9901': 'Receita de Venda de Bens e/ou Produtos – Sem Classificação',
+        '9902': 'Receita de Prestação de Serviços – Sem Classificação',
+        '9903': 'Receita Financeira – Sem Classificação',
+        '9904': 'Receita de Exportação – Sem Classificação',
+        '9999': 'Outras Receitas – Sem Classificação',
+    },
 }
 
-# CSTs que REALMENTE precisam do campo Natureza (conforme leiaute Domínio)
-CSTS_NATUREZA_OBRIGATORIA = {'04', '05', '06', '07', '08', '09',
-                              '4',  '5',  '6',  '7',  '8',  '9'}
-
-# Opções de Natureza de Receita (campo 71/72 do 2030 e campo 67 do 1030)
-# Conforme tabela Domínio Sistemas
-NATUREZA_RECEITA_OPCOES = {
-    '': '-- Não informar --',
-    '01': '01 – Receita de Venda de Bens e Serviços',
-    '02': '02 – Receita de Prestação de Serviços',
-    '03': '03 – Receita de Locação de Bens Móveis',
-    '04': '04 – Receita de Locação de Bens Imóveis',
-    '05': '05 – Receita de Juros',
-    '06': '06 – Receita de Dividendos',
-    '07': '07 – Receita Financeira',
-    '08': '08 – Receita de Exportação',
-    '09': '09 – Receita de Atividade Imobiliária',
-    '10': '10 – Receita de Serviços de Telecomunicações',
-    '11': '11 – Receita de Serviços de Transporte',
-    '12': '12 – Receita de Atividade de Seguros',
-    '13': '13 – Receita de Atividade de Previdência Privada',
-    '14': '14 – Receita de Atividade de Saúde',
-    '15': '15 – Receita de Serviços de Educação',
-    '16': '16 – Receita de Serviços Hospitalares',
-    '17': '17 – Receita de Serviços de Limpeza e Conservação',
-    '18': '18 – Receita de Serviços de Vigilância',
-    '19': '19 – Receita de Serviços de Construção Civil',
-    '20': '20 – Receita de Serviços de Informática',
-    '21': '21 – Receita Cooperativa',
-    '99': '99 – Outras Receitas',
+# CSTs que exigem Natureza (campos 71/72 do 2030 e campo 67 do 1030)
+CSTS_COM_NATUREZA_OBRIGATORIA = {
+    '04', '05', '06', '07', '08', '09',
+    '4',  '5',  '6',  '7',  '8',  '9',
 }
 
-# Opções de Vínculo de Crédito (campo 72/73 do 1030 e 77/78 do 2030)
+# Descrições resumidas dos CSTs para exibição na UI
+CST_DESCRICOES = {
+    '01': 'CST 01 – Tributável Alíquota Básica',
+    '02': 'CST 02 – Tributável Alíquota Diferenciada',
+    '03': 'CST 03 – Tributável por Unidade de Medida',
+    '04': 'CST 04 – Monofásica / Revenda Alíquota Zero',
+    '05': 'CST 05 – Substituição Tributária',
+    '06': 'CST 06 – Alíquota Zero',
+    '07': 'CST 07 – Isenta da Contribuição',
+    '08': 'CST 08 – Sem Incidência',
+    '09': 'CST 09 – Suspensão da Contribuição',
+    '49': 'CST 49 – Outras Operações de Saída',
+    '99': 'CST 99 – Outras Operações',
+}
+
+# Base do Crédito — campo 67 do 1030 e campo 5 do 0110
+BASE_CREDITO_OPCOES = {
+    '':   '-- Não informar --',
+    '01': '01 – Aquisição de bens para revenda',
+    '02': '02 – Aquisição de bens utilizados como insumo',
+    '03': '03 – Aquisição de serviços utilizados como insumo',
+    '04': '04 – Energia elétrica e térmica',
+    '05': '05 – Aluguéis de prédios',
+    '06': '06 – Aluguéis de máquinas e equipamentos',
+    '07': '07 – Armazenagem de mercadoria e frete na operação de venda',
+    '08': '08 – Contraprestações de arrendamento mercantil',
+    '09': '09 – Máquinas e equipamentos (crédito sobre depreciação)',
+    '10': '10 – Máquinas e equipamentos (crédito sobre valor de aquisição)',
+    '11': '11 – Amortização de edificações e benfeitorias em imóveis',
+    '12': '12 – Devolução de vendas sujeitas à incidência não-cumulativa',
+    '13': '13 – Outras operações com direito a crédito',
+    '14': '14 – Atividade de transporte de cargas – subcontratação',
+    '15': '15 – Atividade imobiliária – custo incorrido',
+    '16': '16 – Atividade imobiliária – custo orçado',
+    '17': '17 – Serviços de limpeza, conservação e manutenção',
+    '18': '18 – Estoque de abertura de bens',
+}
+
+# Vínculo de Crédito — campos 72/73 do 1030 e 77/78 do 2030
 VINCULO_CREDITO_OPCOES = {
-    '': '-- Não informar --',
+    '':   '-- Não informar --',
     '01': '01 – Crédito vinculado à alíquota básica',
     '02': '02 – Crédito vinculado à alíquota diferenciada',
     '03': '03 – Crédito vinculado à alíquota por unidade de produto',
@@ -144,13 +329,6 @@ VINCULO_CREDITO_OPCOES = {
     '06': '06 – Crédito presumido agroindústria e aquisição de combustível',
     '08': '08 – Crédito de importação',
     '99': '99 – Outros créditos',
-}
-
-# ==============================
-# CONFIGURAÇÃO PADRÃO DE NATUREZA POR CST
-# ==============================
-NATUREZA_PADRAO_POR_CST = {
-    '04': '', '05': '', '06': '', '07': '', '08': '', '09': '',
 }
 
 
@@ -203,12 +381,11 @@ def converter_data_planilha(valor) -> str:
 
 
 def _normalizar_cst(cst: str) -> str:
-    """Normaliza CST removendo zeros à esquerda para comparação."""
     s = str(cst).strip().split('.')[0]
     try:
-        return str(int(s))
+        return str(int(s)).zfill(2)
     except ValueError:
-        return s
+        return s.zfill(2)
 
 
 def get_natureza_por_cst(
@@ -217,26 +394,28 @@ def get_natureza_por_cst(
     config_natureza: dict,
 ) -> tuple:
     """
-    Retorna (natureza_pis, natureza_cofins) com base na configuração do usuário.
-    config_natureza: dict { 'cst_XX_pis': 'NN', 'cst_XX_cofins': 'NN' }
+    Retorna (natureza_pis, natureza_cofins, base_credito_pis, base_credito_cofins,
+             vinculo_pis, vinculo_cofins).
+    config_natureza: {
+        'cst_XX_nat_pis':    'NNN',
+        'cst_XX_nat_cofins': 'NNN',
+        'cst_XX_base_pis':   'NN',
+        'cst_XX_base_cofins':'NN',
+        'cst_XX_vinc_pis':   'NN',
+        'cst_XX_vinc_cofins':'NN',
+    }
     """
     cst_p = _normalizar_cst(cst_pis)
     cst_c = _normalizar_cst(cst_cofins)
 
-    nat_pis    = ''
-    nat_cofins = ''
+    nat_pis      = config_natureza.get(f"cst_{cst_p}_nat_pis",    '')
+    nat_cofins   = config_natureza.get(f"cst_{cst_c}_nat_cofins", '')
+    base_pis     = config_natureza.get(f"cst_{cst_p}_base_pis",   '')
+    base_cofins  = config_natureza.get(f"cst_{cst_c}_base_cofins",'')
+    vinc_pis     = config_natureza.get(f"cst_{cst_p}_vinc_pis",   '')
+    vinc_cofins  = config_natureza.get(f"cst_{cst_c}_vinc_cofins",'')
 
-    # Busca natureza configurada para o CST do PIS
-    chave_pis = f"cst_{cst_p.zfill(2)}_pis"
-    if chave_pis in config_natureza:
-        nat_pis = config_natureza[chave_pis]
-
-    # Busca natureza configurada para o CST do COFINS
-    chave_cof = f"cst_{cst_c.zfill(2)}_cofins"
-    if chave_cof in config_natureza:
-        nat_cofins = config_natureza[chave_cof]
-
-    return nat_pis, nat_cofins
+    return nat_pis, nat_cofins, base_pis, base_cofins, vinc_pis, vinc_cofins
 
 
 # ==============================
@@ -255,12 +434,12 @@ def apply_tr_theme():
             background-color: #FF8000; color: #FFFFFF;
             border: none; border-radius: 4px; font-weight: bold;
         }
-        .stButton > button:hover { background-color: #D64001; color: #FFFFFF; }
+        .stButton > button:hover { background-color: #D64001; }
         .stDownloadButton > button {
             background-color: #FF8000; color: #FFFFFF;
             border: none; border-radius: 4px; font-weight: bold;
         }
-        .stDownloadButton > button:hover { background-color: #D64001; color: #FFFFFF; }
+        .stDownloadButton > button:hover { background-color: #D64001; }
         hr { border-color: #FF8000; }
         [data-testid="metric-container"] {
             background-color: #E9E9E9; border-left: 4px solid #FF8000;
@@ -268,8 +447,7 @@ def apply_tr_theme():
         }
         .instrucoes-box {
             background-color: #E9E9E9; border-left: 4px solid #FF8000;
-            border-radius: 4px; padding: 16px 20px; margin: 12px 0;
-            color: #444444; font-family: 'Segoe UI', Arial, sans-serif;
+            border-radius: 4px; padding: 16px 20px; margin: 12px 0; color: #444444;
         }
         .instrucoes-box h4 { color: #FF8000; margin-top: 14px; margin-bottom: 6px; }
         .instrucoes-box h4:first-child { margin-top: 0; }
@@ -277,13 +455,20 @@ def apply_tr_theme():
             background-color: #FFF8F0; border-left: 4px solid #FF8000;
             border-radius: 4px; padding: 14px 18px; margin: 8px 0;
         }
+        .cst-header {
+            background: linear-gradient(90deg, #FF8000 0%, #D64001 100%);
+            color: white; padding: 8px 14px; border-radius: 4px;
+            font-weight: bold; font-size: 13px; margin: 6px 0 4px 0;
+        }
+        .natureza-ativa {
+            background-color: #E8F5E9; border-left: 3px solid #388E3C;
+            padding: 5px 10px; border-radius: 4px; margin: 2px 0;
+            font-size: 12px;
+        }
         </style>
     """, unsafe_allow_html=True)
 
 
-# ==============================
-# DECODE / ENCODE
-# ==============================
 def decode_arquivo(raw: bytes) -> str:
     for enc in ('utf-8', 'latin-1', 'cp1252'):
         try:
@@ -307,89 +492,61 @@ def encode_ansi_seguro(conteudo: str, log: list) -> bytes:
     return b''.join(resultado)
 
 
-# ==============================
-# CAMINHOS CANDIDATOS
-# ==============================
 def _candidatos(nome: str) -> list:
     try:
         base = os.path.dirname(os.path.abspath(__file__))
     except NameError:
         base = os.getcwd()
-    return [
-        os.path.join(base, nome),
-        os.path.join(os.getcwd(), nome),
-        nome,
-    ]
+    return [os.path.join(base, nome), os.path.join(os.getcwd(), nome), nome]
 
 
-# ==============================
-# TABELA IMPOSTOS — Domínio Sistemas
-# ==============================
 @st.cache_data(show_spinner=False)
 def carregar_tabela_impostos() -> tuple:
     caminho = next((c for c in _candidatos(NOME_IMP_XLSX) if os.path.isfile(c)), None)
     por_codigo: dict = {}
     por_nome:   dict = {}
-
     if caminho is None:
         for nome, cod in IMPOSTOS_FALLBACK.items():
-            por_codigo[cod]        = nome
-            por_nome[nome.upper()] = cod
+            por_codigo[cod] = nome; por_nome[nome.upper()] = cod
         return por_codigo, por_nome
-
     try:
         df = pd.read_excel(caminho, dtype=str)
         df.columns = [str(c).strip().upper() for c in df.columns]
         col_cod  = next((c for c in df.columns if 'CÓD' in c or 'COD' in c or c == 'CÓDIGO'), None)
         col_nome = next((c for c in df.columns if 'NOME' in c), None)
         if col_cod is None or col_nome is None:
-            if len(df.columns) >= 2:
-                col_cod, col_nome = df.columns[0], df.columns[1]
+            if len(df.columns) >= 2: col_cod, col_nome = df.columns[0], df.columns[1]
             else:
                 for nome, cod in IMPOSTOS_FALLBACK.items():
                     por_codigo[cod] = nome; por_nome[nome.upper()] = cod
                 return por_codigo, por_nome
-
         for _, row in df.iterrows():
             raw_cod = str(row[col_cod]).strip().split('.')[0]
             nome    = str(row[col_nome]).strip()
-            if not raw_cod or raw_cod.upper() == 'NAN' or not nome or nome.upper() == 'NAN':
-                continue
-            try:
-                cod = int(raw_cod)
-            except ValueError:
-                continue
-            por_codigo[cod] = nome
-            por_nome[nome.upper()] = cod
+            if not raw_cod or raw_cod.upper() == 'NAN' or not nome or nome.upper() == 'NAN': continue
+            try: cod = int(raw_cod)
+            except ValueError: continue
+            por_codigo[cod] = nome; por_nome[nome.upper()] = cod
     except Exception:
         for nome, cod in IMPOSTOS_FALLBACK.items():
             por_codigo[cod] = nome; por_nome[nome.upper()] = cod
-
     return por_codigo, por_nome
 
 
 def get_codigo_imposto(nome_fragmento: str, por_nome: dict, default: int = 0) -> int:
     chave = nome_fragmento.strip().upper()
-    if chave in por_nome:
-        return por_nome[chave]
+    if chave in por_nome: return por_nome[chave]
     for k, v in por_nome.items():
-        if chave in k or k in chave:
-            return v
+        if chave in k or k in chave: return v
     return default
 
 
-# ==============================
-# TABELA CFOP — Receita Federal
-# ==============================
 @st.cache_data(show_spinner=False)
 def carregar_tabela_cfop_oficial() -> tuple:
     caminho = next((c for c in _candidatos(NOME_CFOP_XLSX) if os.path.isfile(c)), None)
     tabela_descr: dict = {}
     tabela_flags: dict = {}
-
-    if caminho is None:
-        return tabela_descr, tabela_flags
-
+    if caminho is None: return tabela_descr, tabela_flags
     try:
         df = pd.read_excel(caminho, sheet_name="CFOP", dtype=str)
         df.columns = [str(c).strip().upper() for c in df.columns]
@@ -399,15 +556,12 @@ def carregar_tabela_cfop_oficial() -> tuple:
         col_com   = next((c for c in df.columns if 'INDCOMUNICA' in c.replace(' ', '').upper()), None)
         col_trp   = next((c for c in df.columns if 'INDTRANSP'   in c.replace(' ', '').upper()), None)
         col_dev   = next((c for c in df.columns if 'INDDEVOL'    in c.replace(' ', '').upper()), None)
-        if col_cfop is None or col_descr is None:
-            return tabela_descr, tabela_flags
-
+        if col_cfop is None or col_descr is None: return tabela_descr, tabela_flags
         def _flag(row, col):
             if col is None: return 0
             v = str(row[col]).strip().split('.')[0]
             try: return int(v)
             except ValueError: return 0
-
         for _, row in df.iterrows():
             raw = str(row[col_cfop]).strip()
             if '.' in raw: raw = raw.split('.')[0]
@@ -418,14 +572,10 @@ def carregar_tabela_cfop_oficial() -> tuple:
             if cfop == '0000' or not descr or descr.lower() == 'nan': continue
             tabela_descr[cfop] = descr
             tabela_flags[cfop] = {
-                'indNFe':      _flag(row, col_nfe),
-                'indComunica': _flag(row, col_com),
-                'indTransp':   _flag(row, col_trp),
-                'indDevol':    _flag(row, col_dev),
+                'indNFe': _flag(row, col_nfe), 'indComunica': _flag(row, col_com),
+                'indTransp': _flag(row, col_trp), 'indDevol': _flag(row, col_dev),
             }
-    except Exception:
-        return {}, {}
-
+    except Exception: return {}, {}
     return tabela_descr, tabela_flags
 
 
@@ -433,10 +583,8 @@ def get_descricao_cfop(cfop: str, tabela_descr: dict) -> str:
     return tabela_descr.get(str(cfop).strip().zfill(4), '— descrição não encontrada —')
 
 def get_flags_cfop(cfop: str, tabela_flags: dict) -> dict:
-    return tabela_flags.get(
-        str(cfop).strip().zfill(4),
-        {'indNFe': 0, 'indComunica': 0, 'indTransp': 0, 'indDevol': 0}
-    )
+    return tabela_flags.get(str(cfop).strip().zfill(4),
+                            {'indNFe': 0, 'indComunica': 0, 'indTransp': 0, 'indDevol': 0})
 
 def get_tipo_operacao(cfop: str) -> str:
     p = str(cfop).strip()[:1]
@@ -448,9 +596,6 @@ def is_devolucao(cfop: str, tabela_flags: dict) -> bool:
     return get_flags_cfop(cfop, tabela_flags).get('indDevol', 0) == 1
 
 
-# ==============================
-# CARREGAMENTO DA PLANILHA CLIENTE
-# ==============================
 def carregar_planilha_cliente(arquivo_bytes: bytes, nome_arquivo: str, log: list) -> pd.DataFrame | None:
     try:
         ext = os.path.splitext(nome_arquivo)[1].lower()
@@ -460,12 +605,9 @@ def carregar_planilha_cliente(arquivo_bytes: bytes, nome_arquivo: str, log: list
             raw_str = arquivo_bytes.decode('latin-1', errors='replace')
             sep     = ';' if raw_str.count(';') >= raw_str.count(',') else ','
             df      = pd.read_csv(io.StringIO(raw_str), sep=sep, dtype=str)
-
         df.columns = [str(c).strip().upper() for c in df.columns]
-
         colunas_obrigatorias = [
-            'NF', 'COD.ITEM',
-            'PIS CST', 'PIS PC ALIQ', 'PIS VL BASE', 'PIS VALOR',
+            'NF', 'COD.ITEM', 'PIS CST', 'PIS PC ALIQ', 'PIS VL BASE', 'PIS VALOR',
             'COFINS CST', 'COFINS PC ALIQ', 'COFINS VL BASE', 'COFINS VALOR',
         ]
         ausentes = [c for c in colunas_obrigatorias if c not in df.columns]
@@ -473,15 +615,11 @@ def carregar_planilha_cliente(arquivo_bytes: bytes, nome_arquivo: str, log: list
             log.append(f"ERRO Planilha Cliente: colunas ausentes → {ausentes}")
             log.append(f"Colunas encontradas: {list(df.columns)}")
             return None
-
         df['NF']       = df['NF'].apply(lambda x: str(x).strip().split('.')[0])
         df['COD.ITEM'] = df['COD.ITEM'].apply(lambda x: str(x).strip().split('.')[0])
-
         log.append(f"Planilha Cliente carregada: {len(df)} linhas | "
-                   f"NFs únicas: {df['NF'].nunique()} | "
-                   f"Itens únicos: {df['COD.ITEM'].nunique()}")
+                   f"NFs únicas: {df['NF'].nunique()} | Itens únicos: {df['COD.ITEM'].nunique()}")
         return df
-
     except Exception as e:
         log.append(f"ERRO ao carregar Planilha Cliente: {e}")
         log.append(traceback.format_exc())
@@ -490,46 +628,31 @@ def carregar_planilha_cliente(arquivo_bytes: bytes, nome_arquivo: str, log: list
 
 def _safe_str(valor, casas: int = 2) -> str:
     s = str(valor).strip()
-    if not s or s.upper() == 'NAN':
-        return f"0,{'0' * casas}"
+    if not s or s.upper() == 'NAN': return f"0,{'0' * casas}"
     s = s.replace(',', '.')
-    try:
-        f = float(s)
-        return f"{f:.{casas}f}".replace('.', ',')
-    except ValueError:
-        return f"0,{'0' * casas}"
+    try: return f"{float(s):.{casas}f}".replace('.', ',')
+    except ValueError: return f"0,{'0' * casas}"
 
 
 def _safe_int(valor) -> str:
     s = str(valor).strip()
-    if not s or s.upper() == 'NAN':
-        return ''
-    s = s.split('.')[0]
-    return s
+    if not s or s.upper() == 'NAN': return ''
+    return s.split('.')[0]
 
 
-def buscar_pis_cofins_planilha(
-    df_cliente: pd.DataFrame,
-    num_nf: str,
-    cod_item: str,
-    log: list,
-) -> dict | None:
+def buscar_pis_cofins_planilha(df_cliente: pd.DataFrame, num_nf: str,
+                                cod_item: str, log: list) -> dict | None:
     nf_norm   = str(num_nf).strip().split('.')[0]
     item_norm = str(cod_item).strip().split('.')[0]
-
-    mascara = (df_cliente['NF'] == nf_norm) & (df_cliente['COD.ITEM'] == item_norm)
-    linhas  = df_cliente[mascara]
-
+    mascara   = (df_cliente['NF'] == nf_norm) & (df_cliente['COD.ITEM'] == item_norm)
+    linhas    = df_cliente[mascara]
     if linhas.empty:
         log.append(f"  AVISO: NF={nf_norm} / Item={item_norm} não encontrado na Planilha Cliente.")
         return None
-
     row = linhas.iloc[0]
-
     def _col(nome: str, default: str = '') -> str:
         return str(row[nome]).strip() if nome in df_cliente.columns else default
-
-    resultado = {
+    return {
         'pis_cst':      _safe_int(_col('PIS CST')),
         'pis_base':     _safe_str(_col('PIS VL BASE'), 2),
         'pis_aliq':     _safe_str(_col('PIS PC ALIQ'), 4),
@@ -547,15 +670,10 @@ def buscar_pis_cofins_planilha(
         'ibs_aliq':     _safe_str(_col('IBS ALIQ'),  2),
         'ibs_valor':    _safe_str(_col('IBS VALOR'), 2),
     }
-    return resultado
 
 
-# ==============================
-# PARSER SPED FISCAL
-# ==============================
 def parse_sped(content: str) -> dict:
-    linhas_ordenadas = []
-    por_tipo = {}
+    linhas_ordenadas = []; por_tipo = {}
     for num_linha, linha in enumerate(content.splitlines(), start=1):
         linha = linha.strip()
         if not linha: continue
@@ -569,99 +687,39 @@ def parse_sped(content: str) -> dict:
         por_tipo.setdefault(tipo, []).append((campos, num_linha))
     return {'linhas_ordenadas': linhas_ordenadas, 'por_tipo': por_tipo}
 
+
 def _c(campos: list, idx: int, default: str = '') -> str:
     return campos[idx].strip() if len(campos) > idx else default
 
 
-# ==============================
-# ÍNDICES SPED FISCAL
-# ==============================
-SPED_0000_CNPJ       = 6
-SPED_0000_DT_INI     = 3
-SPED_0000_DT_FIN     = 4
-SPED_0150_COD        = 1
-SPED_0150_CNPJ       = 4
-SPED_0200_COD_ITEM   = 1
-SPED_0200_DESCR      = 2
-SPED_0200_COD_BARRA  = 3
-SPED_0200_COD_ANT    = 4
-SPED_0200_UNID_INV   = 5
-SPED_0200_TIPO_ITEM  = 6
-SPED_0200_COD_NCM    = 7
-SPED_0200_EX_IPI     = 8
-SPED_0200_COD_GEN    = 9
-SPED_0200_COD_LST    = 10
-SPED_0200_ALIQ_ICMS  = 11
-SPED_C100_IND_OPER   = 1
-SPED_C100_COD_PART   = 3
-SPED_C100_COD_MOD    = 4
-SPED_C100_COD_SIT    = 5
-SPED_C100_SER        = 6
-SPED_C100_NUM_DOC    = 7
-SPED_C100_CHV_NFE    = 8
-SPED_C100_DT_DOC     = 9
-SPED_C100_DT_ES      = 10
-SPED_C100_VL_DOC     = 11
-SPED_C100_VL_ICMS    = 21
-SPED_C100_VL_IPI     = 24
-SPED_C100_VL_PIS     = 25
-SPED_C100_VL_COFINS  = 26
-SPED_C170_NUM_ITEM   = 1
-SPED_C170_COD_ITEM   = 2
-SPED_C170_DESCR      = 3
-SPED_C170_QTD        = 4
-SPED_C170_UNID       = 5
-SPED_C170_VL_ITEM    = 6
-SPED_C170_VL_DESC    = 7
-SPED_C170_IND_MOV    = 8
-SPED_C170_CST_ICMS   = 9
-SPED_C170_CFOP       = 10
-SPED_C170_COD_NAT    = 11
-SPED_C170_VL_BC      = 12
-SPED_C170_ALIQ_ICMS  = 13
-SPED_C170_VL_ICMS    = 14
-SPED_C170_VL_BC_ST   = 15
-SPED_C170_ALIQ_ST    = 16
-SPED_C170_VL_ICMS_ST = 17
-SPED_C170_IND_APUR   = 18
-SPED_C170_CST_IPI    = 19
-SPED_C170_COD_ENQ    = 20
-SPED_C170_VL_BC_IPI  = 21
-SPED_C170_ALIQ_IPI   = 22
-SPED_C170_VL_IPI     = 23
-SPED_C170_CST_PIS    = 24
-SPED_C170_VL_BC_PIS  = 25
-SPED_C170_ALIQ_PIS   = 26
-SPED_C170_VL_PIS     = 28
-SPED_C170_CST_COFINS = 29
-SPED_C170_VL_BC_COF  = 30
-SPED_C170_ALIQ_COF   = 31
-SPED_C170_VL_COFINS  = 33
-SPED_C190_CFOP       = 2
-SPED_C190_ALIQ       = 3
-SPED_D100_IND_OPER   = 1
-SPED_D100_COD_PART   = 3
-SPED_D100_COD_MOD    = 4
-SPED_D100_COD_SIT    = 5
-SPED_D100_SER        = 6
-SPED_D100_NUM_DOC    = 8
-SPED_D100_DT_DOC     = 10
-SPED_D100_VL_DOC     = 14
-SPED_D100_ALIQ       = 19
-SPED_D100_VL_ICMS    = 20
-SPED_H010_COD_ITEM   = 1
-SPED_H010_UNID       = 2
-SPED_H010_QTD        = 3
-SPED_H010_VL_UNIT    = 4
-SPED_H010_VL_ITEM    = 5
+SPED_0000_CNPJ=6; SPED_0000_DT_INI=3; SPED_0000_DT_FIN=4
+SPED_0150_COD=1; SPED_0150_CNPJ=4
+SPED_0200_COD_ITEM=1; SPED_0200_DESCR=2; SPED_0200_UNID_INV=5
+SPED_0200_TIPO_ITEM=6; SPED_0200_COD_NCM=7; SPED_0200_ALIQ_ICMS=11
+SPED_C100_IND_OPER=1; SPED_C100_COD_PART=3; SPED_C100_COD_MOD=4
+SPED_C100_COD_SIT=5; SPED_C100_SER=6; SPED_C100_NUM_DOC=7
+SPED_C100_CHV_NFE=8; SPED_C100_DT_DOC=9; SPED_C100_DT_ES=10
+SPED_C100_VL_DOC=11; SPED_C100_VL_ICMS=21
+SPED_C170_NUM_ITEM=1; SPED_C170_COD_ITEM=2; SPED_C170_DESCR=3
+SPED_C170_QTD=4; SPED_C170_UNID=5; SPED_C170_VL_ITEM=6
+SPED_C170_VL_DESC=7; SPED_C170_CST_ICMS=9; SPED_C170_CFOP=10
+SPED_C170_VL_BC=12; SPED_C170_ALIQ_ICMS=13; SPED_C170_VL_ICMS=14
+SPED_C170_VL_BC_ST=15; SPED_C170_ALIQ_ST=16; SPED_C170_VL_ICMS_ST=17
+SPED_C170_CST_IPI=19; SPED_C170_VL_BC_IPI=21
+SPED_C170_ALIQ_IPI=22; SPED_C170_VL_IPI=23
+SPED_C170_CST_PIS=24; SPED_C170_VL_BC_PIS=25; SPED_C170_ALIQ_PIS=26
+SPED_C170_VL_PIS=28; SPED_C170_CST_COFINS=29; SPED_C170_VL_BC_COF=30
+SPED_C170_ALIQ_COF=31; SPED_C170_VL_COFINS=33
+SPED_C190_CFOP=2; SPED_C190_ALIQ=3
+SPED_D100_IND_OPER=1; SPED_D100_COD_PART=3; SPED_D100_COD_MOD=4
+SPED_D100_COD_SIT=5; SPED_D100_SER=6; SPED_D100_NUM_DOC=8
+SPED_D100_DT_DOC=10; SPED_D100_VL_DOC=14; SPED_D100_ALIQ=19; SPED_D100_VL_ICMS=20
+SPED_H010_COD_ITEM=1; SPED_H010_UNID=2; SPED_H010_QTD=3
+SPED_H010_VL_UNIT=4; SPED_H010_VL_ITEM=5
 
 
-# ==============================
-# EXTRAÇÃO DE CFOPs DO SPED
-# ==============================
 def extrair_cfops_do_sped(parsed: dict, tabela_flags: dict, log: list) -> dict:
     cfops = {}
-
     def registrar(cfop_raw: str, tipo_reg: str):
         cfop = str(cfop_raw).strip()
         if not cfop or not cfop.isdigit(): return
@@ -670,188 +728,129 @@ def extrair_cfops_do_sped(parsed: dict, tabela_flags: dict, log: list) -> dict:
         if cfop not in cfops:
             flags = get_flags_cfop(cfop, tabela_flags)
             cfops[cfop] = {
-                'registros':     set(),
-                'ocorrencias':   0,
+                'registros': set(), 'ocorrencias': 0,
                 'tipo_operacao': get_tipo_operacao(cfop),
-                'indNFe':        flags['indNFe'],
-                'indComunica':   flags['indComunica'],
-                'indTransp':     flags['indTransp'],
-                'indDevol':      flags['indDevol'],
+                'indNFe': flags['indNFe'], 'indComunica': flags['indComunica'],
+                'indTransp': flags['indTransp'], 'indDevol': flags['indDevol'],
             }
         cfops[cfop]['registros'].add(tipo_reg)
         cfops[cfop]['ocorrencias'] += 1
-
     contadores = {'C100': 0, 'C170': 0, 'C190': 0, 'D100': 0}
     for tipo, campos, _ in parsed['linhas_ordenadas']:
         if tipo in contadores: contadores[tipo] += 1
         if tipo == 'C170':   registrar(_c(campos, SPED_C170_CFOP), 'C170')
         elif tipo == 'C190': registrar(_c(campos, SPED_C190_CFOP), 'C190')
-
-    log.append(
-        f"Registros lidos: C100={contadores['C100']} | C170={contadores['C170']} | "
-        f"C190={contadores['C190']} | D100={contadores['D100']}"
-    )
+    log.append(f"Registros lidos: C100={contadores['C100']} | C170={contadores['C170']} | "
+               f"C190={contadores['C190']} | D100={contadores['D100']}")
     log.append(f"CFOPs únicos encontrados: {len(cfops)} — {sorted(cfops.keys())}")
     return cfops
 
 
-# ==============================
-# EXTRAÇÃO DE PRODUTOS DO SPED
-# ==============================
 def extrair_produtos_do_sped(parsed: dict, log: list) -> dict:
     produtos = {}
-
     if '0200' in parsed['por_tipo']:
         for campos, _ in parsed['por_tipo']['0200']:
-            cod  = _c(campos, SPED_0200_COD_ITEM).strip()
+            cod = _c(campos, SPED_0200_COD_ITEM).strip()
             if not cod: continue
             produtos[cod] = {
-                'descr':      _c(campos, SPED_0200_DESCR),
-                'unid':       _c(campos, SPED_0200_UNID_INV),
-                'ncm':        _c(campos, SPED_0200_COD_NCM),
-                'tipo_item':  _c(campos, SPED_0200_TIPO_ITEM),
-                'aliq_icms':  _c(campos, SPED_0200_ALIQ_ICMS) or '0,00',
-                'aliq_ipi':   '0,00',
-                'cst_icms':   '',
-                'cst_ipi':    '',
-                'cst_pis':    '',
-                'cst_cofins': '',
-                'aliq_pis':   '0,00',
-                'aliq_cofins':'0,00',
+                'descr': _c(campos, SPED_0200_DESCR), 'unid': _c(campos, SPED_0200_UNID_INV),
+                'ncm': _c(campos, SPED_0200_COD_NCM), 'tipo_item': _c(campos, SPED_0200_TIPO_ITEM),
+                'aliq_icms': _c(campos, SPED_0200_ALIQ_ICMS) or '0,00', 'aliq_ipi': '0,00',
+                'cst_icms': '', 'cst_ipi': '', 'cst_pis': '', 'cst_cofins': '',
+                'aliq_pis': '0,00', 'aliq_cofins': '0,00',
             }
         log.append(f"Produtos carregados do 0200: {len(produtos)}")
-
     itens_c170 = 0
     for tipo, campos, _ in parsed['linhas_ordenadas']:
         if tipo != 'C170': continue
-        cod  = _c(campos, SPED_C170_COD_ITEM).strip()
+        cod = _c(campos, SPED_C170_COD_ITEM).strip()
         if not cod: continue
         itens_c170 += 1
-
-        aliq_icms_c170  = _c(campos, SPED_C170_ALIQ_ICMS)  or '0,00'
-        aliq_ipi_c170   = _c(campos, SPED_C170_ALIQ_IPI)   or '0,00'
-        aliq_pis_c170   = _c(campos, SPED_C170_ALIQ_PIS)   or '0,00'
-        aliq_cof_c170   = _c(campos, SPED_C170_ALIQ_COF)   or '0,00'
-        cst_icms_c170   = _c(campos, SPED_C170_CST_ICMS)
-        cst_ipi_c170    = _c(campos, SPED_C170_CST_IPI)
-        cst_pis_c170    = _c(campos, SPED_C170_CST_PIS)
-        cst_cofins_c170 = _c(campos, SPED_C170_CST_COFINS)
-
+        a_icms = _c(campos, SPED_C170_ALIQ_ICMS) or '0,00'
+        a_ipi  = _c(campos, SPED_C170_ALIQ_IPI)  or '0,00'
+        a_pis  = _c(campos, SPED_C170_ALIQ_PIS)  or '0,00'
+        a_cof  = _c(campos, SPED_C170_ALIQ_COF)  or '0,00'
+        c_icms = _c(campos, SPED_C170_CST_ICMS)
+        c_ipi  = _c(campos, SPED_C170_CST_IPI)
+        c_pis  = _c(campos, SPED_C170_CST_PIS)
+        c_cof  = _c(campos, SPED_C170_CST_COFINS)
         if cod not in produtos:
             produtos[cod] = {
-                'descr':      _c(campos, SPED_C170_DESCR),
-                'unid':       _c(campos, SPED_C170_UNID),
-                'ncm':        '',
-                'tipo_item':  '00',
-                'aliq_icms':  aliq_icms_c170,
-                'aliq_ipi':   aliq_ipi_c170,
-                'cst_icms':   cst_icms_c170,
-                'cst_ipi':    cst_ipi_c170,
-                'cst_pis':    cst_pis_c170,
-                'cst_cofins': cst_cofins_c170,
-                'aliq_pis':   aliq_pis_c170,
-                'aliq_cofins':aliq_cof_c170,
+                'descr': _c(campos, SPED_C170_DESCR), 'unid': _c(campos, SPED_C170_UNID),
+                'ncm': '', 'tipo_item': '00', 'aliq_icms': a_icms, 'aliq_ipi': a_ipi,
+                'cst_icms': c_icms, 'cst_ipi': c_ipi, 'cst_pis': c_pis, 'cst_cofins': c_cof,
+                'aliq_pis': a_pis, 'aliq_cofins': a_cof,
             }
         else:
             p = produtos[cod]
-            if not p.get('cst_icms'):   p['cst_icms']   = cst_icms_c170
-            if not p.get('cst_ipi'):    p['cst_ipi']    = cst_ipi_c170
-            if not p.get('cst_pis'):    p['cst_pis']    = cst_pis_c170
-            if not p.get('cst_cofins'): p['cst_cofins'] = cst_cofins_c170
-            if p.get('aliq_ipi',   '0,00') in ('', '0,00', '0'): p['aliq_ipi']    = aliq_ipi_c170
-            if p.get('aliq_pis',   '0,00') in ('', '0,00', '0'): p['aliq_pis']    = aliq_pis_c170
-            if p.get('aliq_cofins','0,00') in ('', '0,00', '0'): p['aliq_cofins'] = aliq_cof_c170
-            if p.get('aliq_icms',  '0,00') in ('', '0,00', '0'): p['aliq_icms']   = aliq_icms_c170
+            if not p.get('cst_icms'):   p['cst_icms']   = c_icms
+            if not p.get('cst_ipi'):    p['cst_ipi']    = c_ipi
+            if not p.get('cst_pis'):    p['cst_pis']    = c_pis
+            if not p.get('cst_cofins'): p['cst_cofins'] = c_cof
+            for k, v in [('aliq_ipi', a_ipi), ('aliq_pis', a_pis),
+                         ('aliq_cofins', a_cof), ('aliq_icms', a_icms)]:
+                if p.get(k, '0,00') in ('', '0,00', '0'): p[k] = v
             if not p.get('unid'):  p['unid']  = _c(campos, SPED_C170_UNID)
             if not p.get('descr'): p['descr'] = _c(campos, SPED_C170_DESCR)
-
     log.append(f"Itens C170 processados: {itens_c170} | Total produtos únicos: {len(produtos)}")
     return produtos
 
 
-# ==============================
-# GERADOR XLSX — TEMA TR
-# ==============================
 def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_descr: dict, tabela_flags: dict) -> bytes:
     wb = Workbook()
-    COR_LARANJA   = "FF8000"
-    COR_CINZA_ESC = "444444"
-    COR_CINZA_CLR = "E9E9E9"
-    COR_BRANCO    = "FFFFFF"
-    COR_LARANJA_C = "FFF3E0"
-    COR_VERDE_CLR = "E8F5E9"
-    COR_VERM_CLR  = "FFEBEE"
-
+    COR_LARANJA="FF8000"; COR_CINZA_ESC="444444"; COR_CINZA_CLR="E9E9E9"
+    COR_BRANCO="FFFFFF"; COR_LARANJA_C="FFF3E0"; COR_VERDE_CLR="E8F5E9"; COR_VERM_CLR="FFEBEE"
     borda_fina = Border(
         left=Side(style='thin', color="CCCCCC"), right=Side(style='thin', color="CCCCCC"),
         top=Side(style='thin',  color="CCCCCC"), bottom=Side(style='thin', color="CCCCCC"),
     )
-    def fill(h):   return PatternFill("solid", fgColor=h)
-    def center():  return Alignment(horizontal='center', vertical='center')
-    def left_al(): return Alignment(horizontal='left',   vertical='center')
-    def wrap_al(): return Alignment(horizontal='left',   vertical='center', wrap_text=True)
-
-    cfops_ord = sorted(
-        cfops_dict.items(),
-        key=lambda x: (0 if x[1]['tipo_operacao'] == 'Entrada' else 1, x[0])
-    )
-
-    ws1 = wb.active
-    ws1.title = "Acumuladores"
-    ws1.sheet_view.showGridLines = False
-
+    def fill(h): return PatternFill("solid", fgColor=h)
+    def center(): return Alignment(horizontal='center', vertical='center')
+    def left_al(): return Alignment(horizontal='left', vertical='center')
+    def wrap_al(): return Alignment(horizontal='left', vertical='center', wrap_text=True)
+    cfops_ord = sorted(cfops_dict.items(),
+                       key=lambda x: (0 if x[1]['tipo_operacao'] == 'Entrada' else 1, x[0]))
+    ws1 = wb.active; ws1.title = "Acumuladores"; ws1.sheet_view.showGridLines = False
     ws1.merge_cells("A1:I1"); ws1.row_dimensions[1].height = 36
-    c = ws1["A1"]
-    c.value = "Thomson Reuters  |  Domínio Sistemas  —  Tabela de Acumuladores CFOP"
+    c = ws1["A1"]; c.value = "Thomson Reuters  |  Domínio Sistemas  —  Tabela de Acumuladores CFOP"
     c.fill = fill(COR_CINZA_ESC); c.font = Font(name='Segoe UI', bold=True, size=13, color=COR_LARANJA); c.alignment = left_al()
-
     ws1.merge_cells("A2:I2"); ws1.row_dimensions[2].height = 20
     c2 = ws1["A2"]
     c2.value = (f"Extraído do SPED Fiscal  |  {len(cfops_dict)} CFOP(s)  |  "
                 f"Descrições: Receita Federal  |  {datetime.now().strftime('%d/%m/%Y %H:%M')}")
     c2.fill = fill(COR_LARANJA); c2.font = Font(name='Segoe UI', size=9, color=COR_BRANCO); c2.alignment = left_al()
-
     ws1.merge_cells("A3:I3"); ws1.row_dimensions[3].height = 18
-    c3 = ws1["A3"]
-    c3.value = "⚠  Preencha a coluna ACUMULADOR para cada CFOP antes de fazer o upload no conversor."
+    c3 = ws1["A3"]; c3.value = "⚠  Preencha a coluna ACUMULADOR para cada CFOP antes de fazer o upload no conversor."
     c3.fill = fill(COR_CINZA_CLR); c3.font = Font(name='Segoe UI', bold=True, size=9, color=COR_CINZA_ESC); c3.alignment = left_al()
-
-    ws1.row_dimensions[4].height = 6
-    ws1.row_dimensions[5].height = 22
-
+    ws1.row_dimensions[4].height = 6; ws1.row_dimensions[5].height = 22
     cabecalhos = ['CFOP', 'DESCRIÇÃO OFICIAL (Receita Federal)', 'TIPO OPERAÇÃO',
                   'OCORRÊNCIAS', 'DEVOLUÇÃO', 'NFe', 'COMUNICAÇÃO', 'TRANSPORTE', 'ACUMULADOR']
-    col_widths  = [10, 60, 16, 14, 12, 8, 14, 14, 16]
-
+    col_widths = [10, 60, 16, 14, 12, 8, 14, 14, 16]
     for ci, (cab, w) in enumerate(zip(cabecalhos, col_widths), start=1):
         ws1.column_dimensions[get_column_letter(ci)].width = w
         cell = ws1.cell(row=5, column=ci, value=cab)
         cell.fill = fill(COR_LARANJA); cell.font = Font(name='Segoe UI', bold=True, size=11, color=COR_BRANCO)
         cell.alignment = center(); cell.border = borda_fina
-
     linha = 6
     for idx, (cfop, info) in enumerate(cfops_ord):
         ws1.row_dimensions[linha].height = 30
         bg = (COR_CINZA_CLR if idx % 2 == 0 else COR_BRANCO) if info['tipo_operacao'] == 'Entrada' \
              else (COR_LARANJA_C if idx % 2 == 0 else COR_BRANCO)
         descricao = get_descricao_cfop(cfop, tabela_descr)
-        eh_devol = '✔' if info.get('indDevol')    == 1 else ''
-        eh_nfe   = '✔' if info.get('indNFe')       == 1 else ''
-        eh_com   = '✔' if info.get('indComunica')  == 1 else ''
-        eh_trp   = '✔' if info.get('indTransp')    == 1 else ''
+        eh_devol = '✔' if info.get('indDevol') == 1 else ''
+        eh_nfe   = '✔' if info.get('indNFe')   == 1 else ''
+        eh_com   = '✔' if info.get('indComunica') == 1 else ''
+        eh_trp   = '✔' if info.get('indTransp')   == 1 else ''
         valores  = [cfop, descricao, info['tipo_operacao'], info['ocorrencias'],
                     eh_devol, eh_nfe, eh_com, eh_trp, '']
-
         for ci, valor in enumerate(valores, start=1):
-            cell = ws1.cell(row=linha, column=ci, value=valor)
-            cell.border = borda_fina
+            cell = ws1.cell(row=linha, column=ci, value=valor); cell.border = borda_fina
             if ci == 1:
                 cell.fill = fill(bg); cell.font = Font(name='Segoe UI', bold=True, size=10, color=COR_CINZA_ESC); cell.alignment = center()
             elif ci == 2:
                 cell.fill = fill(bg); cell.font = Font(name='Segoe UI', size=9, color=COR_CINZA_ESC); cell.alignment = wrap_al()
             elif ci == 3:
-                cell.fill = fill(bg)
-                cor = "1B5E20" if info['tipo_operacao'] == 'Entrada' else "B71C1C"
+                cell.fill = fill(bg); cor = "1B5E20" if info['tipo_operacao'] == 'Entrada' else "B71C1C"
                 cell.font = Font(name='Segoe UI', bold=True, size=10, color=cor); cell.alignment = center()
             elif ci == 4:
                 cell.fill = fill(bg); cell.font = Font(name='Segoe UI', size=10, color=COR_CINZA_ESC); cell.alignment = center()
@@ -862,141 +861,20 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_descr: dict, tabela_flag
             elif ci == 9:
                 cell.fill = fill("FFF8F0"); cell.font = Font(name='Segoe UI', bold=True, size=10, color=COR_LARANJA)
                 cell.alignment = center()
-                cell.border = Border(left=Side(style='medium', color=COR_LARANJA), right=Side(style='medium', color=COR_LARANJA),
-                                     top=Side(style='thin', color="CCCCCC"), bottom=Side(style='thin', color="CCCCCC"))
+                cell.border = Border(left=Side(style='medium', color=COR_LARANJA),
+                                     right=Side(style='medium', color=COR_LARANJA),
+                                     top=Side(style='thin', color="CCCCCC"),
+                                     bottom=Side(style='thin', color="CCCCCC"))
         linha += 1
-
     ws1.merge_cells(f"A{linha}:I{linha}"); ws1.row_dimensions[linha].height = 18
     cr = ws1.cell(row=linha, column=1, value="Thomson Reuters  |  Domínio Sistemas  |  Descrições: Receita Federal")
     cr.fill = fill(COR_CINZA_ESC); cr.font = Font(name='Segoe UI', size=8, color="888888")
     cr.alignment = Alignment(horizontal='right', vertical='center')
     ws1.freeze_panes = "A6"; ws1.auto_filter.ref = f"A5:I{linha - 1}"
-
-    ws2 = wb.create_sheet(title="CFOPs Encontrados")
-    ws2.sheet_view.showGridLines = False
-    n_ent = sum(1 for v in cfops_dict.values() if v['tipo_operacao'] == 'Entrada')
-    n_sai = sum(1 for v in cfops_dict.values() if v['tipo_operacao'] == 'Saída')
-    n_dev = sum(1 for v in cfops_dict.values() if v.get('indDevol') == 1)
-
-    ws2.merge_cells("A1:H1"); ws2.row_dimensions[1].height = 36
-    c = ws2["A1"]
-    c.value = "Thomson Reuters  |  Domínio Sistemas  —  CFOPs Identificados no SPED Fiscal"
-    c.fill = fill(COR_CINZA_ESC); c.font = Font(name='Segoe UI', bold=True, size=13, color=COR_LARANJA); c.alignment = left_al()
-
-    ws2.merge_cells("A2:H2"); ws2.row_dimensions[2].height = 20
-    c2 = ws2["A2"]
-    c2.value = (f"Analisado em {datetime.now().strftime('%d/%m/%Y %H:%M')}  |  "
-                f"Total: {len(cfops_dict)}  |  Entradas: {n_ent}  |  Saídas: {n_sai}  |  "
-                f"Devoluções: {n_dev}  |  Fonte: Receita Federal")
-    c2.fill = fill(COR_LARANJA); c2.font = Font(name='Segoe UI', size=9, color=COR_BRANCO); c2.alignment = left_al()
-
-    ws2.row_dimensions[3].height = 6; ws2.row_dimensions[4].height = 22
-    cab2  = ['CFOP', 'DESCRIÇÃO OFICIAL (Receita Federal)', 'TIPO OPERAÇÃO',
-             'DEVOLUÇÃO', 'REGISTROS SPED', 'OCORRÊNCIAS', 'STATUS RF', 'STATUS']
-    wids2 = [10, 60, 16, 12, 18, 14, 12, 22]
-
-    for ci, (cab, w) in enumerate(zip(cab2, wids2), start=1):
-        ws2.column_dimensions[get_column_letter(ci)].width = w
-        cell = ws2.cell(row=4, column=ci, value=cab)
-        cell.fill = fill(COR_LARANJA); cell.font = Font(name='Segoe UI', bold=True, size=11, color=COR_BRANCO)
-        cell.alignment = center(); cell.border = borda_fina
-
-    linha2 = 5
-    for idx, (cfop, info) in enumerate(cfops_ord):
-        ws2.row_dimensions[linha2].height = 30
-        bg      = COR_CINZA_CLR if idx % 2 == 0 else COR_BRANCO
-        descr   = get_descricao_cfop(cfop, tabela_descr)
-        mapeado = descr != '— descrição não encontrada —'
-        status  = '✔ Catalogado' if mapeado else '✘ Não catalogado'
-        bg_st   = COR_VERDE_CLR if mapeado else COR_VERM_CLR
-        regs    = ', '.join(sorted(info['registros']))
-        eh_dev  = '✔ Devolução' if info.get('indDevol') == 1 else '—'
-        status_rf = 'NFe' if info.get('indNFe') == 1 else (
-                    'CT-e' if info.get('indTransp') == 1 else (
-                    'Comunic.' if info.get('indComunica') == 1 else '—'))
-        vals = [cfop, descr, info['tipo_operacao'], eh_dev, regs, info['ocorrencias'], status_rf, status]
-
-        for ci, valor in enumerate(vals, start=1):
-            cell = ws2.cell(row=linha2, column=ci, value=valor)
-            cell.border = borda_fina
-            if ci == 1:
-                cell.fill = fill(bg); cell.font = Font(name='Segoe UI', bold=True, size=10, color=COR_CINZA_ESC); cell.alignment = center()
-            elif ci == 2:
-                cell.fill = fill(bg); cell.font = Font(name='Segoe UI', size=9, color=COR_CINZA_ESC); cell.alignment = wrap_al()
-            elif ci == 3:
-                cell.fill = fill(bg)
-                cor = "1B5E20" if info['tipo_operacao'] == 'Entrada' else "B71C1C"
-                cell.font = Font(name='Segoe UI', bold=True, size=10, color=cor); cell.alignment = center()
-            elif ci == 4:
-                cor_d = "B71C1C" if info.get('indDevol') == 1 else COR_CINZA_ESC
-                bg_d  = COR_VERM_CLR if info.get('indDevol') == 1 else bg
-                cell.fill = fill(bg_d); cell.font = Font(name='Segoe UI', bold=True, size=9, color=cor_d); cell.alignment = center()
-            elif ci in (5, 6, 7):
-                cell.fill = fill(bg); cell.font = Font(name='Segoe UI', size=10, color=COR_CINZA_ESC); cell.alignment = center()
-            elif ci == 8:
-                cell.fill = fill(bg_st)
-                cor = "1B5E20" if mapeado else "B71C1C"
-                cell.font = Font(name='Segoe UI', bold=True, size=10, color=cor); cell.alignment = center()
-        linha2 += 1
-
-    ws2.merge_cells(f"A{linha2}:H{linha2}"); ws2.row_dimensions[linha2].height = 18
-    cr2 = ws2.cell(row=linha2, column=1, value="Thomson Reuters  |  Domínio Sistemas  |  Fonte: Receita Federal")
-    cr2.fill = fill(COR_CINZA_ESC); cr2.font = Font(name='Segoe UI', size=8, color="888888")
-    cr2.alignment = Alignment(horizontal='right', vertical='center')
-    ws2.freeze_panes = "A5"; ws2.auto_filter.ref = f"A4:H{linha2 - 1}"
-
-    ws3 = wb.create_sheet(title="Tabela CFOP Receita Federal")
-    ws3.sheet_view.showGridLines = False
-    ws3.merge_cells("A1:G1"); ws3.row_dimensions[1].height = 36
-    c = ws3["A1"]
-    c.value = "Thomson Reuters  |  Tabela Completa de CFOPs — Receita Federal"
-    c.fill = fill(COR_CINZA_ESC); c.font = Font(name='Segoe UI', bold=True, size=13, color=COR_LARANJA); c.alignment = left_al()
-    ws3.merge_cells("A2:G2"); ws3.row_dimensions[2].height = 20
-    c2 = ws3["A2"]
-    c2.value = f"Total: {len(tabela_descr)} CFOPs  |  Fonte: {NOME_CFOP_XLSX} — Receita Federal"
-    c2.fill = fill(COR_LARANJA); c2.font = Font(name='Segoe UI', size=9, color=COR_BRANCO); c2.alignment = left_al()
-    ws3.row_dimensions[3].height = 6; ws3.row_dimensions[4].height = 22
-    cab3  = ['CFOP', 'TIPO OPERAÇÃO', 'DESCRIÇÃO OFICIAL', 'DEVOLUÇÃO', 'NFe', 'COMUNICAÇÃO', 'TRANSPORTE']
-    wids3 = [10, 16, 70, 12, 8, 14, 14]
-    for ci, (cab, w) in enumerate(zip(cab3, wids3), start=1):
-        ws3.column_dimensions[get_column_letter(ci)].width = w
-        cell = ws3.cell(row=4, column=ci, value=cab)
-        cell.fill = fill(COR_LARANJA); cell.font = Font(name='Segoe UI', bold=True, size=11, color=COR_BRANCO)
-        cell.alignment = center(); cell.border = borda_fina
-    linha3 = 5
-    for idx, (cfop, descr) in enumerate(sorted(tabela_descr.items())):
-        ws3.row_dimensions[linha3].height = 28
-        bg = COR_CINZA_CLR if idx % 2 == 0 else COR_BRANCO
-        tipo  = get_tipo_operacao(cfop)
-        flags = tabela_flags.get(cfop, {})
-        f_dev = '✔' if flags.get('indDevol')    == 1 else ''
-        f_nfe = '✔' if flags.get('indNFe')       == 1 else ''
-        f_com = '✔' if flags.get('indComunica')  == 1 else ''
-        f_trp = '✔' if flags.get('indTransp')    == 1 else ''
-        for ci, valor in enumerate([cfop, tipo, descr, f_dev, f_nfe, f_com, f_trp], start=1):
-            cell = ws3.cell(row=linha3, column=ci, value=valor)
-            cell.fill = fill(bg); cell.border = borda_fina
-            if ci == 1:
-                cell.font = Font(name='Segoe UI', bold=True, size=10, color=COR_CINZA_ESC); cell.alignment = center()
-            elif ci == 2:
-                cor = "1B5E20" if tipo == 'Entrada' else "B71C1C"
-                cell.font = Font(name='Segoe UI', bold=True, size=10, color=cor); cell.alignment = center()
-            elif ci == 3:
-                cell.font = Font(name='Segoe UI', size=9, color=COR_CINZA_ESC); cell.alignment = wrap_al()
-            else:
-                cor_f = "B71C1C" if (ci == 4 and valor == '✔') else ("1B5E20" if valor == '✔' else COR_CINZA_ESC)
-                cell.font = Font(name='Segoe UI', bold=True, size=10, color=cor_f); cell.alignment = center()
-        linha3 += 1
-    ws3.freeze_panes = "A5"; ws3.auto_filter.ref = f"A4:G{linha3 - 1}"
-
-    buf = io.BytesIO()
-    wb.save(buf); buf.seek(0)
+    buf = io.BytesIO(); wb.save(buf); buf.seek(0)
     return buf.read()
 
 
-# ==============================
-# CARREGAMENTO DA TABELA DE ACUMULADORES
-# ==============================
 def carregar_acumuladores(arquivo_bytes: bytes, nome_arquivo: str, log: list) -> dict:
     try:
         ext = os.path.splitext(nome_arquivo)[1].lower()
@@ -1004,31 +882,24 @@ def carregar_acumuladores(arquivo_bytes: bytes, nome_arquivo: str, log: list) ->
             df = None
             for header_row in range(6):
                 try:
-                    df_tent = pd.read_excel(
-                        io.BytesIO(arquivo_bytes), sheet_name=0,
-                        header=header_row, dtype=str
-                    )
+                    df_tent = pd.read_excel(io.BytesIO(arquivo_bytes), sheet_name=0,
+                                            header=header_row, dtype=str)
                     cols = [str(c).strip().upper() for c in df_tent.columns]
                     if 'CFOP' in cols and 'ACUMULADOR' in cols:
-                        df_tent.columns = cols
-                        df = df_tent
-                        log.append(f"Planilha lida com sucesso (header linha Excel {header_row + 1}). "
-                                   f"Colunas: {list(df.columns)}")
+                        df_tent.columns = cols; df = df_tent
+                        log.append(f"Planilha lida (header linha {header_row + 1}). Colunas: {list(df.columns)}")
                         break
-                except Exception:
-                    continue
+                except Exception: continue
             if df is None:
-                log.append("ERRO: Não foi possível localizar as colunas 'CFOP' e 'ACUMULADOR' na planilha.")
+                log.append("ERRO: Não foi possível localizar as colunas 'CFOP' e 'ACUMULADOR'.")
                 return None
         else:
             raw_str = arquivo_bytes.decode('latin-1', errors='replace')
-            sep     = ';' if raw_str.count(';') >= raw_str.count(',') else ','
-            df      = pd.read_csv(io.StringIO(raw_str), sep=sep, dtype=str)
+            sep = ';' if raw_str.count(';') >= raw_str.count(',') else ','
+            df  = pd.read_csv(io.StringIO(raw_str), sep=sep, dtype=str)
             df.columns = [str(c).strip().upper() for c in df.columns]
             if 'CFOP' not in df.columns or 'ACUMULADOR' not in df.columns:
-                log.append("ERRO: O arquivo CSV deve conter as colunas 'CFOP' e 'ACUMULADOR'.")
-                return None
-
+                log.append("ERRO: CSV deve conter as colunas 'CFOP' e 'ACUMULADOR'."); return None
         tabela = {}
         for _, row in df.iterrows():
             raw_cfop = str(row['CFOP']).strip()
@@ -1042,38 +913,24 @@ def carregar_acumuladores(arquivo_bytes: bytes, nome_arquivo: str, log: list) ->
             if cfop == '0000': continue
             if not acum or acum.upper() in ('NAN', '', '0'): continue
             tabela[cfop] = acum
-
         if not tabela:
-            log.append("ERRO: Nenhum par CFOP → Acumulador preenchido.")
-            return None
-
+            log.append("ERRO: Nenhum par CFOP → Acumulador preenchido."); return None
         log.append(f"Tabela de acumuladores carregada: {len(tabela)} CFOPs mapeados.")
-        log.append(f"Amostra: { {k: tabela[k] for k in list(tabela)[:5]} }")
         return tabela
-
     except Exception as e:
         log.append(f"ERRO ao carregar tabela de acumuladores: {e}")
-        log.append(traceback.format_exc())
-        return None
+        log.append(traceback.format_exc()); return None
 
 
 def get_acumulador(cfop: str, tabela: dict, nao_mapeados: set) -> str:
     cfop_norm = str(cfop).strip().zfill(4)
     acum = tabela.get(cfop_norm)
-    if acum is None:
-        nao_mapeados.add(cfop_norm)
-        return '9999'
+    if acum is None: nao_mapeados.add(cfop_norm); return '9999'
     return acum
 
 
-# ==============================
-# GERAÇÃO DOS REGISTROS 0100 + 0110
-# ==============================
 def gerar_registros_produtos(produtos: dict, dt_ini: str, por_nome_imp: dict, log: list) -> str:
-    saida = StringIO()
-    n_prod = 0
-    n_vig  = 0
-
+    saida = StringIO(); n_prod = 0; n_vig = 0
     for cod, p in sorted(produtos.items()):
         descr      = (p.get('descr') or '').replace('|', ' ')[:60]
         unid       = p.get('unid', 'UN') or 'UN'
@@ -1086,18 +943,12 @@ def gerar_registros_produtos(produtos: dict, dt_ini: str, por_nome_imp: dict, lo
         cst_cofins = p.get('cst_cofins','') or ''
         aliq_pis   = p.get('aliq_pis',  '0,00') or '0,00'
         aliq_cof   = p.get('aliq_cofins','0,00') or '0,00'
-
-        campos_opcionais = '|' * 64
-
         saida.write(
             f"|0100|{cod}|{descr}|||{ncm}||||{unid}|N|O|||"
             f"|N||0,000|0,00000|0,000|{cst_icms}|{aliq_icms}|{aliq_ipi}|M||N|"
-            f"{campos_opcionais}\n"
+            f"{'|' * 64}\n"
         )
         n_prod += 1
-
-        campos_adicionais_0110 = '|' * 30
-
         saida.write(
             f"|0110|Vigência||01|N|N|"
             f"{aliq_pis}|{aliq_cof}|N|N|||"
@@ -1108,141 +959,249 @@ def gerar_registros_produtos(produtos: dict, dt_ini: str, por_nome_imp: dict, lo
             f"N|N|"
             f"{cst_icms}|{cst_icms}|{aliq_icms}|"
             f"{cst_ipi}|{cst_ipi}|M|{aliq_ipi}|"
-            f"{campos_adicionais_0110}\n"
+            f"{'|' * 30}\n"
         )
         n_vig += 1
-
     log.append(f"Produtos gerados: {n_prod} registros 0100 + {n_vig} registros 0110")
     return saida.getvalue()
 
 
 # ==============================
-# WIDGET DE CONFIGURAÇÃO DE NATUREZA PIS/COFINS
+# WIDGET DE CONFIGURAÇÃO DE NATUREZA PIS/COFINS — V2.9
+# Tabela completa CST × Natureza de Receita
 # ==============================
 def render_configuracao_natureza() -> dict:
     """
-    Renderiza o painel de configuração de Natureza de PIS/COFINS por CST.
-    Retorna dict com as configurações do usuário.
-    Chaves: 'cst_XX_pis' e 'cst_XX_cofins' → valor da natureza selecionada.
+    Renderiza o painel completo de configuração de Natureza de PIS/COFINS por CST.
+    Cada CST tem:
+      - Natureza da Receita PIS  (campo 71 do 2030 / campo 67 do 1030)
+      - Natureza da Receita COFINS (campo 72 do 2030)
+      - Base do Crédito PIS  (campo 67 do 1030 — entradas)
+      - Base do Crédito COFINS
+      - Vínculo de Crédito PIS  (campo 72 do 1030 / campo 77 do 2030)
+      - Vínculo de Crédito COFINS (campo 73 do 1030 / campo 78 do 2030)
+    Retorna dict com todas as configurações do usuário.
     """
     st.markdown("### 🏷️ Configuração de Natureza de PIS/COFINS por CST")
 
     st.markdown("""
     <div class="natureza-box">
-    <strong>ℹ️ O que é Natureza de PIS/COFINS?</strong><br>
-    Para CSTs que representam operações não tributadas (04, 05, 06, 07, 08, 09),
-    o Domínio Sistemas exige que seja informado o código de <strong>Natureza da Receita</strong>
-    (campo 71/72 do registro 2030 para saídas e campo 67 do registro 1030 para entradas).
-    Configure abaixo qual natureza usar para cada CST encontrado na operação.
+    <strong>ℹ️ Como funciona?</strong><br>
+    Para cada CST de saída presente nas suas operações, configure abaixo o código de
+    <strong>Natureza de Receita</strong> (campos 71/72 do registro 2030 e campo 67 do 1030).
+    Os CSTs 04, 05, 06, 07, 08 e 09 <strong>exigem</strong> natureza para validação.
+    Os demais são opcionais. A tabela de subcódigos segue a
+    <em>Instrução Normativa RFB nº 1.911/2019</em>.
     </div>
     """, unsafe_allow_html=True)
 
-    # CSTs que precisam de natureza
-    csts_config = [
-        ('04', 'CST 04 – Monofásica / Revenda Alíquota Zero'),
-        ('05', 'CST 05 – Substituição Tributária'),
-        ('06', 'CST 06 – Alíquota Zero'),
-        ('07', 'CST 07 – Isenta da Contribuição'),
-        ('08', 'CST 08 – Sem Incidência'),
-        ('09', 'CST 09 – Suspensão da Contribuição'),
-    ]
-
+    cfg_anterior = st.session_state.get('config_natureza', {})
     config = {}
 
-    # Opções para o selectbox — lista de labels
-    opcoes_labels = list(NATUREZA_RECEITA_OPCOES.values())
-    opcoes_codigos = list(NATUREZA_RECEITA_OPCOES.keys())
+    # CSTs disponíveis para configuração
+    csts_disponiveis = [
+        ('01', False), ('02', False), ('03', False),
+        ('04', True),  ('05', True),  ('06', True),
+        ('07', True),  ('08', True),  ('09', True),
+        ('49', False), ('99', False),
+    ]
 
-    # Recupera configuração anterior da session_state
-    cfg_anterior = st.session_state.get('config_natureza', {})
+    # ── Tabela de Relacionamento CST × Natureza ───────────────────────────
+    with st.expander("📊 Tabela de Relacionamento CST × Natureza de Receita — clique para expandir",
+                     expanded=False):
+        st.markdown("""
+        <div style="background:#F5F5F5; padding:12px; border-radius:6px; font-size:12px;">
+        <strong>Como usar:</strong> Selecione o CST na coluna esquerda, depois escolha o
+        subcódigo de natureza correspondente. Você pode copiar os dados abaixo e colar
+        diretamente no Excel (Ctrl+C → Ctrl+V na célula A1).
+        </div>
+        """, unsafe_allow_html=True)
 
+        # Monta DataFrame para exibição
+        rows_tabela = []
+        for cst_cod, naturezas in NATUREZA_POR_CST.items():
+            cst_descr = CST_DESCRICOES.get(cst_cod, f'CST {cst_cod}')
+            obrig = '⚠ Obrigatório' if cst_cod in {'04','05','06','07','08','09'} else 'Opcional'
+            for nat_cod, nat_descr in naturezas.items():
+                rows_tabela.append({
+                    'CST': cst_cod,
+                    'Descrição CST': cst_descr,
+                    'Obrigatoriedade': obrig,
+                    'Cód. Natureza': nat_cod,
+                    'Descrição da Natureza de Receita': nat_descr,
+                })
+        df_tabela = pd.DataFrame(rows_tabela)
+        st.dataframe(df_tabela, use_container_width=True, hide_index=True,
+                     height=400,
+                     column_config={
+                         'CST': st.column_config.TextColumn('CST', width=60),
+                         'Obrigatoriedade': st.column_config.TextColumn('Obrig.', width=120),
+                         'Cód. Natureza': st.column_config.TextColumn('Cód.', width=80),
+                     })
+
+        # Botão para baixar a tabela como CSV
+        csv_tabela = df_tabela.to_csv(index=False, sep=';', encoding='utf-8-sig')
+        st.download_button(
+            label="⬇ Baixar Tabela CST × Natureza (.csv)",
+            data=csv_tabela.encode('utf-8-sig'),
+            file_name="tabela_cst_natureza_receita.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+
+    st.markdown("---")
+
+    # ── Configuração por CST ──────────────────────────────────────────────
     with st.expander("⚙️ Configurar Natureza por CST — clique para expandir", expanded=True):
-        col_info, col_pis, col_cofins = st.columns([2, 1.5, 1.5])
-        with col_info:
-            st.markdown("**CST / Descrição**")
-        with col_pis:
-            st.markdown("**Natureza do PIS**")
-        with col_cofins:
-            st.markdown("**Natureza do COFINS**")
 
-        st.markdown("---")
+        for cst_cod, obrigatorio in csts_disponiveis:
+            cst_descr  = CST_DESCRICOES.get(cst_cod, f'CST {cst_cod}')
+            naturezas  = NATUREZA_POR_CST.get(cst_cod, {})
+            obrig_tag  = " ⚠ OBRIGATÓRIO" if obrigatorio else " (opcional)"
+            cor_tag    = "#B71C1C" if obrigatorio else "#666666"
 
-        for cst_cod, cst_descr in csts_config:
-            chave_pis = f"cst_{cst_cod}_pis"
-            chave_cof = f"cst_{cst_cod}_cofins"
+            st.markdown(
+                f"<div class='cst-header'>{cst_descr}{obrig_tag}</div>",
+                unsafe_allow_html=True
+            )
 
-            # Recupera valor anterior ou vazio
-            val_pis_ant = cfg_anterior.get(chave_pis, '')
-            val_cof_ant = cfg_anterior.get(chave_cof, '')
+            # Opções de natureza para este CST
+            nat_opcoes_cod   = [''] + list(naturezas.keys())
+            nat_opcoes_label = ['-- Não informar --'] + [
+                f"{k} – {v[:70]}{'...' if len(v) > 70 else ''}"
+                for k, v in naturezas.items()
+            ]
 
-            # Índice atual
-            idx_pis = opcoes_codigos.index(val_pis_ant) if val_pis_ant in opcoes_codigos else 0
-            idx_cof = opcoes_codigos.index(val_cof_ant) if val_cof_ant in opcoes_codigos else 0
+            # Chaves de configuração
+            chave_nat_pis    = f"cst_{cst_cod}_nat_pis"
+            chave_nat_cof    = f"cst_{cst_cod}_nat_cofins"
+            chave_base_pis   = f"cst_{cst_cod}_base_pis"
+            chave_base_cof   = f"cst_{cst_cod}_base_cofins"
+            chave_vinc_pis   = f"cst_{cst_cod}_vinc_pis"
+            chave_vinc_cof   = f"cst_{cst_cod}_vinc_cofins"
 
-            col_i, col_p, col_c = st.columns([2, 1.5, 1.5])
-            with col_i:
-                st.markdown(
-                    f"<div style='padding:6px 0; font-size:13px;'>"
-                    f"<strong style='color:#FF8000;'>CST {cst_cod}</strong><br>"
-                    f"<span style='color:#666; font-size:11px;'>{cst_descr.split('–')[1].strip() if '–' in cst_descr else cst_descr}</span>"
-                    f"</div>",
-                    unsafe_allow_html=True
-                )
-            with col_p:
-                sel_pis = st.selectbox(
-                    label=f"PIS CST {cst_cod}",
-                    options=opcoes_labels,
-                    index=idx_pis,
+            # Recupera valores anteriores
+            val_nat_pis  = cfg_anterior.get(chave_nat_pis,  '')
+            val_nat_cof  = cfg_anterior.get(chave_nat_cof,  '')
+            val_base_pis = cfg_anterior.get(chave_base_pis, '')
+            val_base_cof = cfg_anterior.get(chave_base_cof, '')
+            val_vinc_pis = cfg_anterior.get(chave_vinc_pis, '')
+            val_vinc_cof = cfg_anterior.get(chave_vinc_cof, '')
+
+            idx_nat_pis  = nat_opcoes_cod.index(val_nat_pis)  if val_nat_pis  in nat_opcoes_cod  else 0
+            idx_nat_cof  = nat_opcoes_cod.index(val_nat_cof)  if val_nat_cof  in nat_opcoes_cod  else 0
+
+            base_cods    = list(BASE_CREDITO_OPCOES.keys())
+            base_labels  = list(BASE_CREDITO_OPCOES.values())
+            vinc_cods    = list(VINCULO_CREDITO_OPCOES.keys())
+            vinc_labels  = list(VINCULO_CREDITO_OPCOES.values())
+
+            idx_base_pis = base_cods.index(val_base_pis) if val_base_pis in base_cods else 0
+            idx_base_cof = base_cods.index(val_base_cof) if val_base_cof in base_cods else 0
+            idx_vinc_pis = vinc_cods.index(val_vinc_pis) if val_vinc_pis in vinc_cods else 0
+            idx_vinc_cof = vinc_cods.index(val_vinc_cof) if val_vinc_cof in vinc_cods else 0
+
+            # Layout em 2 colunas (PIS | COFINS)
+            col_pis, col_cof = st.columns(2)
+
+            with col_pis:
+                st.markdown(f"<span style='color:#FF8000; font-weight:bold; font-size:12px;'>PIS</span>",
+                            unsafe_allow_html=True)
+                sel_nat_pis = st.selectbox(
+                    f"Natureza PIS – CST {cst_cod}",
+                    options=nat_opcoes_label,
+                    index=idx_nat_pis,
                     key=f"nat_pis_{cst_cod}",
                     label_visibility="collapsed",
                 )
-                # Converte label → código
-                cod_pis = opcoes_codigos[opcoes_labels.index(sel_pis)]
-                config[chave_pis] = cod_pis
+                config[chave_nat_pis] = nat_opcoes_cod[nat_opcoes_label.index(sel_nat_pis)]
 
-            with col_c:
-                sel_cof = st.selectbox(
-                    label=f"COFINS CST {cst_cod}",
-                    options=opcoes_labels,
-                    index=idx_cof,
+                sel_base_pis = st.selectbox(
+                    f"Base Crédito PIS – CST {cst_cod}",
+                    options=base_labels,
+                    index=idx_base_pis,
+                    key=f"base_pis_{cst_cod}",
+                    label_visibility="collapsed",
+                    help="Base do Crédito PIS (campo 67 do 1030 — entradas)",
+                )
+                config[chave_base_pis] = base_cods[base_labels.index(sel_base_pis)]
+
+                sel_vinc_pis = st.selectbox(
+                    f"Vínculo Crédito PIS – CST {cst_cod}",
+                    options=vinc_labels,
+                    index=idx_vinc_pis,
+                    key=f"vinc_pis_{cst_cod}",
+                    label_visibility="collapsed",
+                    help="Vínculo de Crédito PIS (campo 72 do 1030 / campo 77 do 2030)",
+                )
+                config[chave_vinc_pis] = vinc_cods[vinc_labels.index(sel_vinc_pis)]
+
+            with col_cof:
+                st.markdown(f"<span style='color:#FF8000; font-weight:bold; font-size:12px;'>COFINS</span>",
+                            unsafe_allow_html=True)
+                sel_nat_cof = st.selectbox(
+                    f"Natureza COFINS – CST {cst_cod}",
+                    options=nat_opcoes_label,
+                    index=idx_nat_cof,
                     key=f"nat_cof_{cst_cod}",
                     label_visibility="collapsed",
                 )
-                cod_cof = opcoes_codigos[opcoes_labels.index(sel_cof)]
-                config[chave_cof] = cod_cof
+                config[chave_nat_cof] = nat_opcoes_cod[nat_opcoes_label.index(sel_nat_cof)]
+
+                sel_base_cof = st.selectbox(
+                    f"Base Crédito COFINS – CST {cst_cod}",
+                    options=base_labels,
+                    index=idx_base_cof,
+                    key=f"base_cof_{cst_cod}",
+                    label_visibility="collapsed",
+                    help="Base do Crédito COFINS (campo 67 do 1030 — entradas)",
+                )
+                config[chave_base_cof] = base_cods[base_labels.index(sel_base_cof)]
+
+                sel_vinc_cof = st.selectbox(
+                    f"Vínculo Crédito COFINS – CST {cst_cod}",
+                    options=vinc_labels,
+                    index=idx_vinc_cof,
+                    key=f"vinc_cof_{cst_cod}",
+                    label_visibility="collapsed",
+                    help="Vínculo de Crédito COFINS (campo 73 do 1030 / campo 78 do 2030)",
+                )
+                config[chave_vinc_cof] = vinc_cods[vinc_labels.index(sel_vinc_cof)]
+
+            st.markdown("")  # espaçamento
 
         st.markdown("---")
 
-        # Resumo visual das configurações ativas
+        # Resumo das configurações ativas
         configs_ativas = {k: v for k, v in config.items() if v}
         if configs_ativas:
-            st.markdown("**✅ Configurações ativas:**")
-            resumo_cols = st.columns(3)
-            col_idx = 0
-            for chave, valor in configs_ativas.items():
-                partes = chave.split('_')  # ['cst', 'XX', 'pis'/'cofins']
-                cst_n  = partes[1]
-                imp    = partes[2].upper()
-                label  = NATUREZA_RECEITA_OPCOES.get(valor, valor)
-                resumo_cols[col_idx % 3].markdown(
-                    f"<div style='background:#E8F5E9; border-left:3px solid #388E3C; "
-                    f"padding:6px 10px; border-radius:4px; margin:3px 0; font-size:12px;'>"
-                    f"<strong>CST {cst_n} / {imp}</strong><br>{valor} – {label.split('–')[1].strip() if '–' in label else label}"
+            st.markdown("**✅ Resumo das configurações ativas:**")
+            cols_res = st.columns(3)
+            for i, (chave, valor) in enumerate(configs_ativas.items()):
+                partes  = chave.split('_')
+                cst_n   = partes[1]
+                tipo    = '_'.join(partes[2:])
+                tipo_label = {
+                    'nat_pis': 'Natureza PIS', 'nat_cofins': 'Natureza COFINS',
+                    'base_pis': 'Base Créd. PIS', 'base_cofins': 'Base Créd. COFINS',
+                    'vinc_pis': 'Vínculo PIS', 'vinc_cofins': 'Vínculo COFINS',
+                }.get(tipo, tipo)
+                cols_res[i % 3].markdown(
+                    f"<div class='natureza-ativa'>"
+                    f"<strong>CST {cst_n} / {tipo_label}</strong><br>"
+                    f"<span style='color:#1B5E20;'>Código: {valor}</span>"
                     f"</div>",
                     unsafe_allow_html=True
                 )
-                col_idx += 1
         else:
             st.info("Nenhuma natureza configurada. Os campos serão deixados em branco no arquivo gerado.")
 
-    # Salva na session_state para persistir entre reruns
     st.session_state['config_natureza'] = config
     return config
 
 
 # ==============================
-# CONVERSÃO SPED FISCAL → DOMÍNIO SISTEMAS
-# V2.8 — com Natureza de PIS/COFINS por CST
+# CONVERSÃO SPED FISCAL → DOMÍNIO SISTEMAS — V2.9
 # ==============================
 def converter_sped_para_dominio(
     parsed: dict,
@@ -1262,22 +1221,17 @@ def converter_sped_para_dominio(
         'itens_planilha': 0, 'itens_sped': 0,
         'natureza_aplicada': 0,
     }
-
     cfg_nat = config_natureza or {}
 
     COD_ICMS    = get_codigo_imposto('ICMS',              por_nome_imp, 1)
     COD_IPI     = get_codigo_imposto('IPI',               por_nome_imp, 2)
-    COD_ISS     = get_codigo_imposto('ISS',               por_nome_imp, 3)
     COD_ST      = get_codigo_imposto('SUBST. TRIBUTARIA', por_nome_imp, 9)
     COD_ICMS_ST = get_codigo_imposto('ICMS RETIDO',       por_nome_imp, 11)
 
     usa_planilha = df_cliente is not None and not df_cliente.empty
-    log.append(
-        f"Fonte PIS/COFINS/IBS/CBS: {'Planilha Cliente ✔' if usa_planilha else 'SPED Fiscal (fallback)'}"
-    )
-    log.append(
-        f"Configuração de Natureza: {len([v for v in cfg_nat.values() if v])} CSTs com natureza definida"
-    )
+    n_nat_cfg    = len([v for v in cfg_nat.values() if v])
+    log.append(f"Fonte PIS/COFINS/IBS/CBS: {'Planilha Cliente ✔' if usa_planilha else 'SPED Fiscal (fallback)'}")
+    log.append(f"Configurações de Natureza ativas: {n_nat_cfg}")
 
     dt_ini_sped = ''
     if '0000' in parsed['por_tipo']:
@@ -1300,22 +1254,19 @@ def converter_sped_para_dominio(
 
     produtos = extrair_produtos_do_sped(parsed, log)
     if produtos:
-        bloco_produtos = gerar_registros_produtos(produtos, dt_ini_sped, por_nome_imp, log)
-        saida.write(bloco_produtos)
+        saida.write(gerar_registros_produtos(produtos, dt_ini_sped, por_nome_imp, log))
         stats['produtos'] = len(produtos)
     else:
         log.append("AVISO: Nenhum produto encontrado no SPED (0200/C170).")
 
-    blocos_c    = []
-    bloco_atual = None
-    for tipo, campos, num_linha in parsed['linhas_ordenadas']:
+    # Monta hierarquia C100 → C170 → C190
+    blocos_c = []; bloco_atual = None
+    for tipo, campos, _ in parsed['linhas_ordenadas']:
         if tipo == 'C100':
             if bloco_atual is not None: blocos_c.append(bloco_atual)
             bloco_atual = {'c100': campos, 'c170': [], 'c190': []}
-        elif tipo == 'C170':
-            if bloco_atual is not None: bloco_atual['c170'].append(campos)
-        elif tipo == 'C190':
-            if bloco_atual is not None: bloco_atual['c190'].append(campos)
+        elif tipo == 'C170' and bloco_atual is not None: bloco_atual['c170'].append(campos)
+        elif tipo == 'C190' and bloco_atual is not None: bloco_atual['c190'].append(campos)
     if bloco_atual is not None: blocos_c.append(bloco_atual)
     log.append(f"Blocos C100 montados: {len(blocos_c)}")
 
@@ -1333,22 +1284,17 @@ def converter_sped_para_dominio(
             dt_es    = converter_data(_c(campos_c100, SPED_C100_DT_ES))
             vl_doc   = _c(campos_c100, SPED_C100_VL_DOC)
             vl_icms  = _c(campos_c100, SPED_C100_VL_ICMS)
-
             part_campos = participantes.get(cod_part, [])
             cnpj_part   = _c(part_campos, SPED_0150_CNPJ) if part_campos else ''
             tipo_es     = 'E' if ind_oper == '0' else 'S'
-
             cfop_principal = ''
             if bloco['c170']:   cfop_principal = _c(bloco['c170'][0], SPED_C170_CFOP)
             elif bloco['c190']: cfop_principal = _c(bloco['c190'][0], SPED_C190_CFOP)
-
             acum_principal = get_acumulador(cfop_principal, tabela_acum, nao_mapeados)
             eh_devol       = is_devolucao(cfop_principal, tabela_flags)
             if eh_devol: stats['devolucoes'] += 1
-
             aliq_icms_nf = '0,00'
             if bloco['c190']: aliq_icms_nf = _c(bloco['c190'][0], SPED_C190_ALIQ) or '0,00'
-
             obs = 'DEVOLUCAO' if eh_devol else 'OBSERVACAO'
             saida.write(
                 f"|1000|{num_doc}|{cnpj_part}||{ind_oper}|{cfop_principal}|"
@@ -1360,60 +1306,55 @@ def converter_sped_para_dominio(
             )
             if ind_oper == '0': stats['nf_entrada'] += 1
             else:               stats['nf_saida']   += 1
-
             saida.write(
                 f"|1020|{num_doc}||{vl_doc}|{aliq_icms_nf}|{vl_icms}|"
                 f"0,00|0,00|0,00|0,00|{vl_doc}||||\n"
             )
             stats['analiticos'] += 1
 
-            # ── Itens C170 ────────────────────────────────────────────────
             for campos_c170 in bloco['c170']:
                 cod_item  = _c(campos_c170, SPED_C170_COD_ITEM)
-                num_item  = _c(campos_c170, SPED_C170_NUM_ITEM)
-                qtd       = _c(campos_c170, SPED_C170_QTD)       or '0'
+                qtd       = _c(campos_c170, SPED_C170_QTD)     or '0'
                 unid      = _c(campos_c170, SPED_C170_UNID)
-                vl_item   = _c(campos_c170, SPED_C170_VL_ITEM)   or '0,00'
-                vl_desc_i = _c(campos_c170, SPED_C170_VL_DESC)   or '0,00'
+                vl_item   = _c(campos_c170, SPED_C170_VL_ITEM) or '0,00'
+                vl_desc_i = _c(campos_c170, SPED_C170_VL_DESC) or '0,00'
                 cfop_item = _c(campos_c170, SPED_C170_CFOP)
 
-                # ICMS/IPI — sempre do SPED
-                vl_bc_icms   = _c(campos_c170, SPED_C170_VL_BC)       or '0,00'
-                aliq_icms    = _c(campos_c170, SPED_C170_ALIQ_ICMS)   or '0,00'
-                vl_icms_i    = _c(campos_c170, SPED_C170_VL_ICMS)     or '0,00'
-                vl_bc_st     = _c(campos_c170, SPED_C170_VL_BC_ST)    or '0,00'
-                aliq_st      = _c(campos_c170, SPED_C170_ALIQ_ST)     or '0,00'
-                vl_icms_st   = _c(campos_c170, SPED_C170_VL_ICMS_ST)  or '0,00'
-                vl_bc_ipi    = _c(campos_c170, SPED_C170_VL_BC_IPI)   or '0,00'
-                aliq_ipi     = _c(campos_c170, SPED_C170_ALIQ_IPI)    or '0,00'
-                vl_ipi       = _c(campos_c170, SPED_C170_VL_IPI)      or '0,00'
+                # ICMS / IPI — sempre do SPED
+                vl_bc_icms  = _c(campos_c170, SPED_C170_VL_BC)       or '0,00'
+                aliq_icms   = _c(campos_c170, SPED_C170_ALIQ_ICMS)   or '0,00'
+                vl_icms_i   = _c(campos_c170, SPED_C170_VL_ICMS)     or '0,00'
+                vl_bc_st    = _c(campos_c170, SPED_C170_VL_BC_ST)    or '0,00'
+                aliq_st     = _c(campos_c170, SPED_C170_ALIQ_ST)     or '0,00'
+                vl_icms_st  = _c(campos_c170, SPED_C170_VL_ICMS_ST)  or '0,00'
+                vl_bc_ipi   = _c(campos_c170, SPED_C170_VL_BC_IPI)   or '0,00'
+                aliq_ipi    = _c(campos_c170, SPED_C170_ALIQ_IPI)    or '0,00'
+                vl_ipi      = _c(campos_c170, SPED_C170_VL_IPI)      or '0,00'
 
-                # PIS/COFINS/IBS/CBS — Planilha Cliente (prioridade)
-                dados_planilha = None
+                # PIS / COFINS / IBS / CBS — Planilha Cliente (prioridade)
+                dados_pl = None
                 if usa_planilha:
-                    dados_planilha = buscar_pis_cofins_planilha(
-                        df_cliente, num_doc, cod_item, log
-                    )
+                    dados_pl = buscar_pis_cofins_planilha(df_cliente, num_doc, cod_item, log)
 
-                if dados_planilha is not None:
-                    pis_cst      = dados_planilha['pis_cst']
-                    pis_base     = dados_planilha['pis_base']
-                    pis_aliq     = dados_planilha['pis_aliq']
-                    pis_valor    = dados_planilha['pis_valor']
-                    cofins_cst   = dados_planilha['cofins_cst']
-                    cofins_base  = dados_planilha['cofins_base']
-                    cofins_aliq  = dados_planilha['cofins_aliq']
-                    cofins_valor = dados_planilha['cofins_valor']
-                    cbs_class    = dados_planilha['cbs_class']
-                    cbs_base     = dados_planilha['cbs_base']
-                    cbs_aliq     = dados_planilha['cbs_aliq']
-                    cbs_valor    = dados_planilha['cbs_valor']
-                    ibs_class    = dados_planilha['ibs_class']
-                    ibs_base     = dados_planilha['ibs_base']
-                    ibs_aliq     = dados_planilha['ibs_aliq']
-                    ibs_valor    = dados_planilha['ibs_valor']
-                    cod_pis    = get_codigo_pis(pis_aliq, por_nome_imp)
-                    cod_cofins = get_codigo_cofins(cofins_aliq, por_nome_imp)
+                if dados_pl is not None:
+                    pis_cst      = dados_pl['pis_cst']
+                    pis_base     = dados_pl['pis_base']
+                    pis_aliq     = dados_pl['pis_aliq']
+                    pis_valor    = dados_pl['pis_valor']
+                    cofins_cst   = dados_pl['cofins_cst']
+                    cofins_base  = dados_pl['cofins_base']
+                    cofins_aliq  = dados_pl['cofins_aliq']
+                    cofins_valor = dados_pl['cofins_valor']
+                    ibs_class    = dados_pl['ibs_class']
+                    ibs_base     = dados_pl['ibs_base']
+                    ibs_aliq     = dados_pl['ibs_aliq']
+                    ibs_valor    = dados_pl['ibs_valor']
+                    cbs_class    = dados_pl['cbs_class']
+                    cbs_base     = dados_pl['cbs_base']
+                    cbs_aliq     = dados_pl['cbs_aliq']
+                    cbs_valor    = dados_pl['cbs_valor']
+                    cod_pis      = get_codigo_pis(pis_aliq, por_nome_imp)
+                    cod_cofins   = get_codigo_cofins(cofins_aliq, por_nome_imp)
                     stats['itens_planilha'] += 1
                 else:
                     pis_cst      = _c(campos_c170, SPED_C170_CST_PIS)
@@ -1424,40 +1365,24 @@ def converter_sped_para_dominio(
                     cofins_base  = _c(campos_c170, SPED_C170_VL_BC_COF)  or '0,00'
                     cofins_aliq  = _c(campos_c170, SPED_C170_ALIQ_COF)   or '0,00'
                     cofins_valor = _c(campos_c170, SPED_C170_VL_COFINS)  or '0,00'
-                    cbs_class    = ''
-                    cbs_base     = '0,00'
-                    cbs_aliq     = '0,00'
-                    cbs_valor    = '0,00'
-                    ibs_class    = ''
-                    ibs_base     = '0,00'
-                    ibs_aliq     = '0,00'
-                    ibs_valor    = '0,00'
+                    ibs_class = ibs_base = ibs_aliq = ibs_valor = ''
+                    cbs_class = cbs_base = cbs_aliq = cbs_valor = ''
+                    ibs_base = cbs_base = '0,00'
+                    ibs_aliq = cbs_aliq = '0,00'
+                    ibs_valor = cbs_valor = '0,00'
                     cod_pis    = get_codigo_pis(pis_aliq, por_nome_imp)
                     cod_cofins = get_codigo_cofins(cofins_aliq, por_nome_imp)
                     stats['itens_sped'] += 1
 
-                # ── NATUREZA DE PIS/COFINS por CST ────────────────────────
-                # Normaliza CST para 2 dígitos (ex: "50" → "50", "4" → "04")
-                cst_p_norm = str(pis_cst).strip().split('.')[0]
-                cst_c_norm = str(cofins_cst).strip().split('.')[0]
-                try:
-                    cst_p_norm = str(int(cst_p_norm)).zfill(2)
-                except ValueError:
-                    cst_p_norm = cst_p_norm.zfill(2)
-                try:
-                    cst_c_norm = str(int(cst_c_norm)).zfill(2)
-                except ValueError:
-                    cst_c_norm = cst_c_norm.zfill(2)
+                # ── Natureza / Base do Crédito / Vínculo por CST ─────────
+                nat_pis, nat_cofins, base_cred_pis, base_cred_cofins, vinc_pis, vinc_cofins = \
+                    get_natureza_por_cst(pis_cst, cofins_cst, cfg_nat)
 
-                nat_pis, nat_cofins = get_natureza_por_cst(
-                    cst_p_norm, cst_c_norm, cfg_nat
-                )
-
-                if nat_pis or nat_cofins:
+                if nat_pis or nat_cofins or base_cred_pis or vinc_pis:
                     stats['natureza_aplicada'] += 1
 
                 try:
-                    vl_unit = f"{float(vl_item.replace(',', '.')) / float(qtd.replace(',', '.')):.3f}".replace('.', ',')
+                    vl_unit = f"{float(vl_item.replace(',','.')) / float(qtd.replace(',','.')):.3f}".replace('.', ',')
                 except Exception:
                     vl_unit = vl_item
 
@@ -1466,22 +1391,15 @@ def converter_sped_para_dominio(
                     except: return 0.0
 
                 if _val(vl_icms_st) > 0:
-                    cod_imp_item = COD_ICMS_ST; vl_bc_princ = vl_bc_st
-                    aliq_princ = aliq_st; vl_imp_princ = vl_icms_st
+                    cod_imp = COD_ICMS_ST; vl_bc_p = vl_bc_st; aliq_p = aliq_st; vl_imp_p = vl_icms_st
                 elif _val(vl_icms_i) > 0:
-                    cod_imp_item = COD_ICMS; vl_bc_princ = vl_bc_icms
-                    aliq_princ = aliq_icms; vl_imp_princ = vl_icms_i
+                    cod_imp = COD_ICMS;    vl_bc_p = vl_bc_icms; aliq_p = aliq_icms; vl_imp_p = vl_icms_i
                 elif _val(vl_ipi) > 0:
-                    cod_imp_item = COD_IPI; vl_bc_princ = vl_bc_ipi
-                    aliq_princ = aliq_ipi; vl_imp_princ = vl_ipi
+                    cod_imp = COD_IPI;     vl_bc_p = vl_bc_ipi;  aliq_p = aliq_ipi;  vl_imp_p = vl_ipi
                 else:
-                    cod_imp_item = COD_ICMS; vl_bc_princ = vl_bc_icms
-                    aliq_princ = aliq_icms; vl_imp_princ = vl_icms_i
+                    cod_imp = COD_ICMS;    vl_bc_p = vl_bc_icms; aliq_p = aliq_icms; vl_imp_p = vl_icms_i
 
-                # ── Determina registro: 1030 (entrada) ou 2030 (saída) ────
-                reg = '1030' if ind_oper == '0' else '2030'
-
-                # ── IBS e CBS ─────────────────────────────────────────────
+                # IBS e CBS
                 campos_ibs_cbs = (
                     f"{ibs_class}|{ibs_base}|{ibs_aliq}|{ibs_valor}|"
                     f"{cbs_class}|{cbs_base}|{cbs_aliq}|{cbs_valor}"
@@ -1489,122 +1407,90 @@ def converter_sped_para_dominio(
 
                 if ind_oper == '0':
                     # ── REGISTRO 1030 (ENTRADA) ───────────────────────────
-                    # Campo 67 = Base do crédito (natureza de entrada PIS)
-                    # Campo 72 = Vínculo de Crédito PIS
-                    # Campo 73 = Vínculo de Crédito COFINS
-                    # Campos 41 = CST PIS | 43 = CST COFINS
-                    # Campos 42 = Base PIS | 44 = Base COFINS
-                    # Campos 36 = Alíq PIS | 37 = Vlr PIS
-                    # Campos 38 = Alíq COFINS | 39 = Vlr COFINS
+                    # Campo 36 = Alíq PIS | 37 = Vlr PIS
+                    # Campo 38 = Alíq COFINS | 39 = Vlr COFINS
+                    # Campo 41 = CST PIS | 42 = Base PIS
+                    # Campo 43 = CST COFINS | 44 = Base COFINS
+                    # Campo 67 = Base do Crédito (nat/base crédito PIS entrada)
+                    # Campo 72 = Vínculo Crédito PIS
+                    # Campo 73 = Vínculo Crédito COFINS
                     # Campos 104-111 = IBS/CBS
                     saida.write(
                         f"|1030|{cod_item}|{qtd}|{vl_unit}|0|0|1|{dt_doc}||"
                         f"{cod_sit}|{vl_item}|{vl_desc_i}|{vl_item}|0,00|"
-                        f"{aliq_princ}|||"
-                        # campos 18-20 (frete, seguro, despesas) = 0,00
-                        # campos 21-25 (qtd gasolina, ICMS, SUBTRI, isentas, outras IPI) = 0,00
-                        # campo 27 = valor unitário
-                        f"{cod_pis}|{pis_base}|{pis_aliq}|{pis_valor}|0,000|{vl_imp_princ}|"
+                        f"{aliq_p}|||"
+                        f"{cod_pis}|{pis_base}|{pis_aliq}|{pis_valor}|0,000|{vl_imp_p}|"
                         f"{cod_cofins}|{cofins_base}|{cofins_aliq}|{cofins_valor}||{vl_item}|0,00|"
-                        f"{cod_imp_item}|{vl_bc_princ}|{vl_ipi}|{vl_ipi}|0,00|"
+                        f"{cod_imp}|{vl_bc_p}|{vl_ipi}|{vl_ipi}|0,00|"
                         f"{cfop_item}||0,0000|0,00|0,00|0,00|{vl_bc_icms}|"
                         f"{COD_ICMS_ST}|{vl_bc_st}|{COD_ICMS_ST}|{vl_icms_st}|"
-                        # campo 41 = CST PIS | campo 43 = CST COFINS
+                        # campo 41=CST PIS | campo 43=CST COFINS
                         f"{pis_cst}|{cofins_cst}|||"
                         f"{dt_doc}|{dt_doc}||||||S|{unid}|||"
                         f"{vl_item}|||||||1|||||01|01|||"
-                        # campo 67 = Base do crédito (natureza PIS entrada)
-                        f"{nat_pis}|"
-                        # campo 68 = Nº nota devolvida
-                        # campo 69 = Descrição complementar
-                        # campo 70 = CST PIS nota devolvida
-                        # campo 71 = CST COFINS nota devolvida
-                        # campo 72 = Vínculo crédito PIS
-                        # campo 73 = Vínculo crédito COFINS
-                        f"||||{nat_pis}|{nat_cofins}|"
+                        # campo 67 = Base do Crédito PIS
+                        f"{base_cred_pis}|||"
+                        # campo 70 = CST PIS nota devolvida | 71 = CST COFINS nota devolvida
+                        # campo 72 = Vínculo Crédito PIS | 73 = Vínculo Crédito COFINS
+                        f"|{vinc_pis}|{vinc_cofins}|"
                         # campos 74-75 = Exclusão PIS/COFINS
+                        f"0,00|0,00|"
                         # campos 76-78 = ICMS Carga Média
-                        f"||0,00|0,00|0,00|"
+                        f"0,00|0,00|0,00|"
                         # campos 79-84 = ECF, Redução, Cód.Rec.PIS/COFINS devolvidos
-                        f"||0,00|||"
-                        # campos 83-84 = Cód.Rec.PIS/COFINS
+                        f"||0,00||"
+                        # campo 83 = Cód.Rec.PIS | 84 = Cód.Rec.COFINS
                         f"{nat_pis}|{nat_cofins}|"
                         # campos 85-89 = Crédito Presumido, ICMS ST Antecipação
                         f"0,00|0,00|0,00|0,00|0,00|"
-                        # campos 90-103 = IPI, CEST, ICMS ST Retido, Identificador, etc.
+                        # campos 90-103
                         f"||0,00|0,00|||||||||||"
                         # campos 104-111 = IBS e CBS
                         f"{campos_ibs_cbs}||||\n"
                     )
                 else:
                     # ── REGISTRO 2030 (SAÍDA) ─────────────────────────────
-                    # Campo 48 = CST PIS | campo 49 = Base PIS
-                    # Campo 50 = Alíq PIS | campo 51 = Vlr PIS
-                    # Campo 52 = CST COFINS | campo 53 = Base COFINS
-                    # Campo 54 = Alíq COFINS | campo 55 = Vlr COFINS
-                    # Campo 71 = Natureza da receita PIS
-                    # Campo 72 = Natureza da receita COFINS
+                    # Campo 48 = CST PIS | 49 = Base PIS | 50 = Alíq PIS | 51 = Vlr PIS
+                    # Campo 52 = CST COFINS | 53 = Base COFINS | 54 = Alíq COFINS | 55 = Vlr COFINS
+                    # Campo 71 = Natureza da receita PIS ← AQUI
+                    # Campo 72 = Natureza da receita COFINS ← AQUI
+                    # Campo 77 = Vínculo Crédito PIS | 78 = Vínculo Crédito COFINS
                     # Campos 111-118 = IBS e CBS
                     saida.write(
                         f"|2030|{cod_item}|{qtd}|{vl_unit}|0|0|1|{dt_doc}|"
-                        # campo 9 = CST ICMS | campo 10 = Vlr Bruto | campo 11 = Desconto
                         f"{cod_sit}|{vl_item}|{vl_desc_i}|"
-                        # campo 12 = Base ICMS | campo 13 = Base ST | campo 14 = Alíq ICMS
-                        f"{vl_bc_icms}|{vl_bc_st}|{aliq_princ}|"
-                        # campos 15-18 = Chassi, Incentivado, Apuração, Sit.ECF
+                        f"{vl_bc_icms}|{vl_bc_st}|{aliq_p}|"
                         f"||||"
-                        # campos 19-21 = Frete, Seguro, Despesas
                         f"0,00|0,00|0,00|"
-                        # campos 22-24 = Qtd Gasolina, Vlr ICMS, Vlr SUBTRI
                         f"0,00|{vl_icms_i}|{vl_icms_st}|"
-                        # campos 25-26 = Isentas IPI, Outras IPI
                         f"0,00|0,00|"
-                        # campo 27 = Valor Unitário
                         f"{vl_unit}|"
-                        # campos 28-30 = Alíq ST, Cód Trib IPI, Alíq IPI
-                        f"{aliq_st}|{cod_imp_item}|{aliq_ipi}|"
-                        # campos 31-33 = Base ISSQN, Alíq ISSQN, Vlr ISSQN
+                        f"{aliq_st}|{cod_imp}|{aliq_ipi}|"
                         f"0,00|0,00|0,00|"
-                        # campos 34-47 = Lote Med, Validade, Ref.BC, Vl.Tab, Arma, Cano, TipoOp,
-                        #                QtdCancel, VlrCancel, Isentas, NaoInc, AcumST, FabMed, ECF
+                        # campos 34-47
                         f"|||||||0,00|0,00|0,00|0,00|0,00|||"
-                        # campo 48 = CST PIS
-                        f"{pis_cst}|"
-                        # campo 49 = Base PIS
-                        f"{pis_base}|"
-                        # campo 50 = Alíq PIS
-                        f"{pis_aliq}|"
-                        # campo 51 = Vlr PIS
-                        f"{pis_valor}|"
-                        # campo 52 = CST COFINS
-                        f"{cofins_cst}|"
-                        # campo 53 = Base COFINS
-                        f"{cofins_base}|"
-                        # campo 54 = Alíq COFINS
-                        f"{cofins_aliq}|"
-                        # campo 55 = Vlr COFINS
-                        f"{cofins_valor}|"
-                        # campos 56-62 = QtdLote, Enquad.IPI, Qtd(16,5), MovFísica, Unid, CodBico, VlrContábil
+                        # campos 48-55 = PIS e COFINS
+                        f"{pis_cst}|{pis_base}|{pis_aliq}|{pis_valor}|"
+                        f"{cofins_cst}|{cofins_base}|{cofins_aliq}|{cofins_valor}|"
+                        # campos 56-62
                         f"||{aliq_ipi}|{qtd}|S|{unid}||{vl_item}|"
-                        # campos 63-68 = Qtd/Vlr/Vlr PIS e COFINS por unidade medida
+                        # campos 63-68
                         f"0,000|0,0000|0,00|0,000|0,0000|0,00|"
-                        # campo 69 = Nota devolvida | campo 70 = Descrição complementar
+                        # campo 69 = nota devolvida | 70 = descrição complementar
                         f"||"
-                        # campo 71 = Natureza da receita PIS ← AQUI
+                        # campo 71 = Natureza PIS ← PREENCHIDO
                         f"{nat_pis}|"
-                        # campo 72 = Natureza da receita COFINS ← AQUI
+                        # campo 72 = Natureza COFINS ← PREENCHIDO
                         f"{nat_cofins}|"
                         # campo 73 = Exclusão cooperativa
                         f"0,00|"
                         # campos 74-75 = CST PIS/COFINS nota devolvida
                         f"||"
-                        # campo 76 = Data | campos 77-78 = Vínculo Crédito PIS/COFINS
-                        f"{dt_doc}|{nat_pis}|{nat_cofins}|"
+                        # campo 76 = Data | 77 = Vínculo PIS | 78 = Vínculo COFINS
+                        f"{dt_doc}|{vinc_pis}|{vinc_cofins}|"
                         # campos 79-90 = Bases/Impostos Frete/Seguro/Desp PIS e COFINS
                         f"0,00|0,00|0,00|0,00|0,00|0,00|0,00|0,00|0,00|0,00|0,00|0,00|"
-                        # campos 91-110 = Tanque, BC/Alíq/Vlr Carga Média, Redução,
-                        #                  DIFAL, Cód.Rec.PIS/COFINS, IPI, CEST,
-                        #                  PR-Benefício, Identificador, Desonerado, Código
+                        # campos 91-110
                         f"||0,00|0,00|0,00|0,00||||||||||||"
                         # campos 111-118 = IBS e CBS
                         f"{campos_ibs_cbs}||||\n"
@@ -1617,12 +1503,11 @@ def converter_sped_para_dominio(
             log.append(traceback.format_exc())
             stats['erros'] += 1
 
-    # ── D100 ──────────────────────────────────────────────────────────────
+    # D100
     if 'D100' in parsed['por_tipo']:
         for campos, num_linha in parsed['por_tipo']['D100']:
             try:
                 ind_oper = _c(campos, SPED_D100_IND_OPER)
-                cod_part = _c(campos, SPED_D100_COD_PART)
                 cod_mod  = _c(campos, SPED_D100_COD_MOD)
                 cod_sit  = _c(campos, SPED_D100_COD_SIT)
                 serie    = _c(campos, SPED_D100_SER)
@@ -1632,9 +1517,9 @@ def converter_sped_para_dominio(
                 aliq     = _c(campos, SPED_D100_ALIQ)
                 vl_icms  = _c(campos, SPED_D100_VL_ICMS)
                 tipo_es  = 'E' if ind_oper == '0' else 'S'
+                cod_part = _c(campos, SPED_D100_COD_PART)
                 part_campos = participantes.get(cod_part, [])
                 cnpj_part   = _c(part_campos, SPED_0150_CNPJ) if part_campos else ''
-
                 saida.write(
                     f"|1000|{num_doc}|{cnpj_part}||{ind_oper}||"
                     f"{serie}|{cod_mod}|{cod_sit}||||"
@@ -1649,17 +1534,15 @@ def converter_sped_para_dominio(
                 )
                 stats['transporte'] += 1
             except Exception as e:
-                log.append(f"ERRO ao converter D100 linha {num_linha}: {e}")
+                log.append(f"ERRO D100 linha {num_linha}: {e}")
                 stats['erros'] += 1
 
-    # ── H010 ──────────────────────────────────────────────────────────────
+    # H010
     if 'H010' in parsed['por_tipo']:
         for campos, _ in parsed['por_tipo']['H010']:
             saida.write(
-                f"|H010|{_c(campos, SPED_H010_COD_ITEM)}|"
-                f"{_c(campos, SPED_H010_UNID)}|"
-                f"{_c(campos, SPED_H010_QTD)}|"
-                f"{_c(campos, SPED_H010_VL_UNIT)}|"
+                f"|H010|{_c(campos, SPED_H010_COD_ITEM)}|{_c(campos, SPED_H010_UNID)}|"
+                f"{_c(campos, SPED_H010_QTD)}|{_c(campos, SPED_H010_VL_UNIT)}|"
                 f"{_c(campos, SPED_H010_VL_ITEM)}|\n"
             )
             stats['inventario'] += 1
@@ -1667,27 +1550,20 @@ def converter_sped_para_dominio(
     saida.write("|9999|\n")
 
     if nao_mapeados:
-        log.append(
-            f"AVISO: {len(nao_mapeados)} CFOP(s) sem acumulador (receberam 9999): "
-            f"{', '.join(sorted(nao_mapeados))}"
-        )
+        log.append(f"AVISO: {len(nao_mapeados)} CFOP(s) sem acumulador (9999): "
+                   f"{', '.join(sorted(nao_mapeados))}")
     log.append(
-        f"Conversão concluída — "
-        f"Produtos={stats['produtos']} | "
+        f"Conversão concluída — Produtos={stats['produtos']} | "
         f"NFs entrada={stats['nf_entrada']} | NFs saída={stats['nf_saida']} | "
-        f"Itens={stats['itens']} | "
-        f"  ↳ Da Planilha Cliente={stats['itens_planilha']} | "
-        f"  ↳ Do SPED (fallback)={stats['itens_sped']} | "
-        f"Natureza aplicada={stats['natureza_aplicada']} itens | "
-        f"Devoluções={stats['devolucoes']} | "
-        f"Transporte={stats['transporte']} | Inventário={stats['inventario']} | "
-        f"Erros={stats['erros']}"
+        f"Itens={stats['itens']} | Da Planilha={stats['itens_planilha']} | "
+        f"Do SPED={stats['itens_sped']} | Natureza aplicada={stats['natureza_aplicada']} | "
+        f"Devoluções={stats['devolucoes']} | Erros={stats['erros']}"
     )
     return saida.getvalue(), stats
 
 
 # ==============================
-# INTERFACE STREAMLIT
+# INTERFACE STREAMLIT — V2.9
 # ==============================
 def main():
     st.set_page_config(
@@ -1698,6 +1574,8 @@ def main():
 
     tabela_cfop, tabela_flags    = carregar_tabela_cfop_oficial()
     por_codigo_imp, por_nome_imp = carregar_tabela_impostos()
+
+    total_nat = sum(len(v) for v in NATUREZA_POR_CST.values())
 
     st.markdown(
         f"""
@@ -1711,6 +1589,7 @@ def main():
                 Saída: <strong>Leiaute padrão Domínio Sistemas</strong>
                 &nbsp;|&nbsp; CFOPs: <strong>{len(tabela_cfop)}</strong>
                 &nbsp;|&nbsp; Impostos: <strong>{len(por_codigo_imp)}</strong>
+                &nbsp;|&nbsp; Naturezas: <strong>{total_nat}</strong> subcódigos
             </p>
         </div>
         """, unsafe_allow_html=True,
@@ -1721,79 +1600,53 @@ def main():
         st.markdown(f"**Versão:** {VERSAO}")
         st.markdown("**Thomson Reuters  |  Domínio Sistemas**")
         st.markdown("---")
-        st.markdown("### 📥 Entrada (SPED Fiscal)")
-        st.markdown("- **0000** Abertura\n- **0150** Participantes\n- **0200** Produtos\n"
-                    "- **C100** Notas Fiscais\n- **C170** Itens de NF\n- **C190** Analítico ICMS\n"
-                    "- **D100** Conhecimento Transporte\n- **H010** Inventário\n")
-        st.markdown("### 📤 Saída (Domínio Sistemas)")
-        st.markdown("- **0000** Cabeçalho\n- **0100** Cadastro de Produtos\n"
-                    "- **0110** Vigência Fiscal\n- **1000** Nota Fiscal\n"
-                    "- **1020** Totais da NF\n- **1030** Itens de Entrada\n"
-                    "- **2030** Itens de Saída\n- **9999** Encerramento\n")
-        st.markdown("---")
-        st.markdown("### 🏷️ Natureza PIS/COFINS")
+        st.markdown("### 🏷️ Natureza de Receita")
         st.markdown(
-            "CSTs que exigem Natureza:\n\n"
-            "| CST | Descrição |\n|---|---|\n"
-            "| 04 | Monofásica/Alíq.Zero |\n"
-            "| 05 | Substituição Tributária |\n"
-            "| 06 | Alíquota Zero |\n"
-            "| 07 | Isenta |\n"
-            "| 08 | Sem Incidência |\n"
-            "| 09 | Suspensão |\n\n"
-            "Configure na **Etapa 2** abaixo."
-        )
-        st.markdown("---")
-        st.markdown("### 📊 Planilha Cliente")
-        st.markdown(
-            "PIS, COFINS, IBS e CBS lidos da Planilha Cliente.\n\n"
-            "Colunas obrigatórias:\n"
-            "`NF`, `COD.ITEM`, `PIS CST`, `PIS PC ALIQ`,\n"
-            "`PIS VL BASE`, `PIS VALOR`, `COFINS CST`,\n"
-            "`COFINS PC ALIQ`, `COFINS VL BASE`, `COFINS VALOR`"
+            f"**{total_nat} subcódigos** mapeados\n\n"
+            "| CST | Naturezas |\n|---|---|\n" +
+            "\n".join([f"| {cst} | {len(nats)} |" for cst, nats in NATUREZA_POR_CST.items()])
         )
         st.markdown("---")
         st.markdown("### 📑 Fluxo")
         st.markdown(
             "1. Upload do SPED Fiscal `.txt`\n"
-            "2. **Extrair CFOPs → baixar XLSX**\n"
-            "3. Preencher coluna `ACUMULADOR`\n"
-            "4. **Configurar Natureza PIS/COFINS** por CST\n"
-            "5. Upload da Planilha Cliente (opcional)\n"
-            "6. Upload do XLSX de acumuladores\n"
-            "7. **Converter** e baixar saída\n"
+            "2. Extrair CFOPs → baixar XLSX\n"
+            "3. Preencher `ACUMULADOR`\n"
+            "4. **Configurar Natureza por CST**\n"
+            "5. Upload Planilha Cliente (opcional)\n"
+            "6. Upload XLSX de acumuladores\n"
+            "7. Converter e baixar saída\n"
         )
+        st.markdown("---")
+        if tabela_cfop:
+            st.success(f"✅ {len(tabela_cfop)} CFOPs | "
+                       f"{sum(1 for f in tabela_flags.values() if f.get('indDevol')==1)} devoluções")
+        else:
+            st.error("❌ Tabela CFOP não carregada!")
+        if por_codigo_imp:
+            st.success(f"✅ {len(por_codigo_imp)} impostos carregados")
+        else:
+            st.warning("⚠ Tabela de impostos não carregada (fallback).")
 
     st.markdown("---")
 
-    # ── Defaults da session_state ─────────────────────────────────────────
     defaults = {
-        "log":              [f"Aplicação pronta. Versão: {VERSAO} | CFOPs: {len(tabela_cfop)} | Impostos: {len(por_codigo_imp)}"],
-        "resultado":        None,
-        "nome_saida":       "saida_dominio.txt",
-        "stats":            None,
-        "xlsx_bytes":       None,
-        "xlsx_nome":        "acumuladores.xlsx",
-        "cfops_extraidos":  None,
-        "tabela_acum_ok":   False,
-        "arquivo_raw":      None,
-        "arquivo_nome":     None,
-        "df_cliente":       None,
-        "cliente_ok":       False,
-        "config_natureza":  {},
+        "log":             [f"Aplicação pronta. {VERSAO} | CFOPs: {len(tabela_cfop)} | "
+                            f"Impostos: {len(por_codigo_imp)} | Naturezas: {total_nat}"],
+        "resultado":       None, "nome_saida": "saida_dominio.txt",
+        "stats":           None, "xlsx_bytes": None, "xlsx_nome": "acumuladores.xlsx",
+        "cfops_extraidos": None, "tabela_acum_ok": False,
+        "arquivo_raw":     None, "arquivo_nome": None,
+        "df_cliente":      None, "cliente_ok": False,
+        "config_natureza": {},
     }
     for k, v in defaults.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
+        if k not in st.session_state: st.session_state[k] = v
 
     # ── Etapa 1: SPED ─────────────────────────────────────────────────────
     st.markdown("### 🔍 Etapa 1 — Upload do SPED Fiscal e extração de CFOPs")
-
-    uploaded_file = st.file_uploader(
-        "📂 Arquivo SPED Fiscal (.txt)", type=["txt"],
-        help="Arquivo EFD ICMS/IPI exportado pelo sistema ERP", key="upload_sped",
-    )
-
+    uploaded_file = st.file_uploader("📂 Arquivo SPED Fiscal (.txt)", type=["txt"],
+                                     key="upload_sped")
     if uploaded_file is not None:
         raw_atual = uploaded_file.read()
         if raw_atual != st.session_state.arquivo_raw:
@@ -1807,12 +1660,10 @@ def main():
             st.session_state.log             = [
                 f"Arquivo carregado: {uploaded_file.name} ({len(raw_atual)/1024:.1f} KB)"
             ]
-
     if st.session_state.arquivo_raw is not None:
         st.info(f"📄 Arquivo em memória: **{st.session_state.arquivo_nome}** "
                 f"({len(st.session_state.arquivo_raw)/1024:.1f} KB)")
-
-    col_e1, col_e2 = st.columns([1, 1])
+    col_e1, col_e2 = st.columns(2)
     with col_e1:
         extrair = st.button("🔍 Extrair CFOPs e Gerar Planilha",
                             disabled=(st.session_state.arquivo_raw is None),
@@ -1821,20 +1672,17 @@ def main():
         if st.session_state.xlsx_bytes is not None:
             st.download_button(
                 label="⬇ Baixar Planilha de Acumuladores (.xlsx)",
-                data=st.session_state.xlsx_bytes,
-                file_name=st.session_state.xlsx_nome,
+                data=st.session_state.xlsx_bytes, file_name=st.session_state.xlsx_nome,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True, type="primary",
             )
-
     if extrair:
-        st.session_state.log             = ["Extraindo CFOPs do SPED Fiscal..."]
-        st.session_state.xlsx_bytes      = None
-        st.session_state.cfops_extraidos = None
+        st.session_state.log = ["Extraindo CFOPs do SPED Fiscal..."]
+        st.session_state.xlsx_bytes = None; st.session_state.cfops_extraidos = None
         try:
             content    = decode_arquivo(st.session_state.arquivo_raw)
             parsed     = parse_sped(content)
-            st.session_state.log.append(f"Registros encontrados: {', '.join(parsed['por_tipo'].keys())}")
+            st.session_state.log.append(f"Registros: {', '.join(parsed['por_tipo'].keys())}")
             cfops_dict = extrair_cfops_do_sped(parsed, tabela_flags, st.session_state.log)
             if not cfops_dict:
                 st.session_state.log.append("AVISO: Nenhum CFOP encontrado.")
@@ -1847,7 +1695,7 @@ def main():
                 st.session_state.cfops_extraidos = cfops_dict
                 n_dev = sum(1 for v in cfops_dict.values() if v.get('indDevol') == 1)
                 st.session_state.log.append(
-                    f"✔ {len(cfops_dict)} CFOP(s) extraído(s) | {n_dev} devolução(ões) | Planilha: {nome_xlsx}"
+                    f"✔ {len(cfops_dict)} CFOP(s) | {n_dev} devolução(ões) | {nome_xlsx}"
                 )
         except Exception:
             st.session_state.log.append("ERRO FATAL na extração de CFOPs.")
@@ -1861,77 +1709,57 @@ def main():
         n_dev = sum(1 for v in cfops_dict.values() if v.get('indDevol') == 1)
         col_m1, col_m2, col_m3, col_m4 = st.columns(4)
         col_m1.metric("CFOPs únicos", len(cfops_dict))
-        col_m2.metric("Entradas",     n_ent)
-        col_m3.metric("Saídas",       n_sai)
-        col_m4.metric("Devoluções",   n_dev)
+        col_m2.metric("Entradas", n_ent)
+        col_m3.metric("Saídas", n_sai)
+        col_m4.metric("Devoluções", n_dev)
         with st.expander("📋 CFOPs identificados no SPED", expanded=False):
-            rows = [{'CFOP': cfop, 'Descrição (RF)': get_descricao_cfop(cfop, tabela_cfop),
+            rows = [{'CFOP': cfop, 'Descrição': get_descricao_cfop(cfop, tabela_cfop),
                      'Tipo': info['tipo_operacao'],
                      'Devolução': '✔' if info.get('indDevol') == 1 else '',
-                     'Ocorrências': info['ocorrencias'],
-                     'Registros': ', '.join(sorted(info['registros']))}
+                     'Ocorrências': info['ocorrencias']}
                     for cfop, info in sorted(cfops_dict.items())]
             st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
     st.markdown("---")
 
-    # ── Etapa 2: Configuração de Natureza PIS/COFINS ──────────────────────
+    # ── Etapa 2: Natureza de PIS/COFINS ───────────────────────────────────
     config_natureza = render_configuracao_natureza()
 
     st.markdown("---")
 
     # ── Etapa 3: Planilha Cliente ──────────────────────────────────────────
     st.markdown("### 📊 Etapa 3 — Upload da Planilha Cliente (PIS / COFINS / IBS / CBS)")
-
     arquivo_cliente = st.file_uploader(
-        "📂 Planilha Cliente (.xlsx ou .csv)",
-        type=["xlsx", "xls", "csv"],
-        help="Planilha com colunas NF, COD.ITEM, PIS CST, PIS PC ALIQ, PIS VL BASE, PIS VALOR, "
-             "COFINS CST, COFINS PC ALIQ, COFINS VL BASE, COFINS VALOR, CBS BASE, CBS ALIQ, "
-             "CBS VALOR, CLASS TRIB CBS, IBS BASE, IBS ALIQ, IBS VALOR, CLASS TRIB IBS",
+        "📂 Planilha Cliente (.xlsx ou .csv)", type=["xlsx", "xls", "csv"],
         key="upload_cliente",
     )
-
     if arquivo_cliente is not None:
-        log_temp   = []
-        raw_cli    = arquivo_cliente.read()
+        log_temp = []; raw_cli = arquivo_cliente.read()
         df_cli_prev = carregar_planilha_cliente(raw_cli, arquivo_cliente.name, log_temp)
         if df_cli_prev is not None:
-            st.session_state.df_cliente = df_cli_prev
-            st.session_state.cliente_ok = True
-            st.success(
-                f"✅ Planilha Cliente válida — **{len(df_cli_prev)} linhas** | "
-                f"NFs: {df_cli_prev['NF'].nunique()} | Itens únicos: {df_cli_prev['COD.ITEM'].nunique()}"
-            )
-            with st.expander("👁️ Prévia da Planilha Cliente (primeiras 10 linhas)"):
+            st.session_state.df_cliente = df_cli_prev; st.session_state.cliente_ok = True
+            st.success(f"✅ Planilha Cliente válida — **{len(df_cli_prev)} linhas** | "
+                       f"NFs: {df_cli_prev['NF'].nunique()} | "
+                       f"Itens únicos: {df_cli_prev['COD.ITEM'].nunique()}")
+            with st.expander("👁️ Prévia (primeiras 10 linhas)"):
                 st.dataframe(df_cli_prev.head(10), use_container_width=True, hide_index=True)
         else:
-            st.session_state.df_cliente = None
-            st.session_state.cliente_ok = False
-            for msg in log_temp:
-                st.error(msg)
+            st.session_state.df_cliente = None; st.session_state.cliente_ok = False
+            for msg in log_temp: st.error(msg)
     else:
         if not st.session_state.cliente_ok:
-            st.info(
-                "⬆ Faça o upload da Planilha Cliente para usar PIS/COFINS/IBS/CBS dela. "
-                "Se não fizer upload, os valores do SPED serão usados como fallback."
-            )
+            st.info("⬆ Upload opcional. Se não fizer upload, os valores do SPED serão usados como fallback.")
 
     st.markdown("---")
 
     # ── Etapa 4: Acumuladores + Conversão ─────────────────────────────────
     st.markdown("### ▶ Etapa 4 — Converter com a tabela de acumuladores preenchida")
-
     arquivo_acum = st.file_uploader(
         "📂 Tabela de Acumuladores preenchida (.xlsx ou .csv)",
-        type=["xlsx", "xls", "csv"],
-        help="Planilha gerada na Etapa 1 com a coluna ACUMULADOR preenchida",
-        key="upload_acum",
+        type=["xlsx", "xls", "csv"], key="upload_acum",
     )
-
     if arquivo_acum is not None:
-        log_temp = []
-        raw_acum = arquivo_acum.read()
+        log_temp = []; raw_acum = arquivo_acum.read()
         tab_prev = carregar_acumuladores(raw_acum, arquivo_acum.name, log_temp)
         arquivo_acum.seek(0)
         if tab_prev is not None:
@@ -1945,8 +1773,7 @@ def main():
             st.info("⬆ Faça o upload da tabela de acumuladores preenchida para converter.")
 
     pode_converter = st.session_state.tabela_acum_ok and st.session_state.arquivo_raw is not None
-
-    col1, col2 = st.columns([1, 1])
+    col1, col2 = st.columns(2)
     with col1:
         converter = st.button("▶ Converter SPED → Domínio",
                               disabled=not pode_converter,
@@ -1960,28 +1787,21 @@ def main():
 
     if converter and pode_converter:
         st.session_state.log       = ["Iniciando conversão SPED → Domínio Sistemas..."]
-        st.session_state.resultado = None
-        st.session_state.stats     = None
+        st.session_state.resultado = None; st.session_state.stats = None
         try:
             arquivo_acum.seek(0)
             tabela_acum = carregar_acumuladores(
-                arquivo_acum.read(), arquivo_acum.name, st.session_state.log,
-            )
+                arquivo_acum.read(), arquivo_acum.name, st.session_state.log)
             if tabela_acum is None:
                 st.session_state.log.append("ERRO: Tabela inválida. Abortando.")
                 st.rerun()
-
             content = decode_arquivo(st.session_state.arquivo_raw)
             parsed  = parse_sped(content)
-
-            df_cliente_conv = st.session_state.get('df_cliente', None)
-            cfg_nat_conv    = st.session_state.get('config_natureza', {})
-
             resultado_txt, stats = converter_sped_para_dominio(
                 parsed, tabela_acum, tabela_flags, por_nome_imp,
                 st.session_state.log,
-                df_cliente=df_cliente_conv,
-                config_natureza=cfg_nat_conv,
+                df_cliente=st.session_state.get('df_cliente'),
+                config_natureza=st.session_state.get('config_natureza', {}),
             )
             resultado_bytes = encode_ansi_seguro(resultado_txt, st.session_state.log)
             st.session_state.resultado  = resultado_bytes
@@ -1997,18 +1817,17 @@ def main():
         stats = st.session_state.stats or {}
         st.markdown("#### 📊 Estatísticas da Conversão")
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Produtos",            stats.get('produtos',          0))
-        col2.metric("NFs Entrada",         stats.get('nf_entrada',        0))
-        col3.metric("NFs Saída",           stats.get('nf_saida',          0))
-        col4.metric("Devoluções",          stats.get('devolucoes',         0))
+        col1.metric("Produtos",            stats.get('produtos',         0))
+        col2.metric("NFs Entrada",         stats.get('nf_entrada',       0))
+        col3.metric("NFs Saída",           stats.get('nf_saida',         0))
+        col4.metric("Devoluções",          stats.get('devolucoes',        0))
         col5, col6, col7, col8 = st.columns(4)
-        col5.metric("Itens (total)",       stats.get('itens',              0))
-        col6.metric("Da Planilha Cliente", stats.get('itens_planilha',     0))
-        col7.metric("Do SPED (fallback)",  stats.get('itens_sped',         0))
-        col8.metric("Natureza Aplicada",   stats.get('natureza_aplicada',  0))
-        col9, col10 = st.columns([1, 3])
+        col5.metric("Itens (total)",       stats.get('itens',             0))
+        col6.metric("Da Planilha Cliente", stats.get('itens_planilha',    0))
+        col7.metric("Do SPED (fallback)",  stats.get('itens_sped',        0))
+        col8.metric("Natureza Aplicada",   stats.get('natureza_aplicada', 0))
+        col9, _ = st.columns([1, 3])
         col9.metric("Erros", stats.get('erros', 0))
-        st.markdown("---")
         with st.expander("👁️ Prévia do arquivo gerado (primeiras 80 linhas)"):
             preview = '\n'.join(
                 st.session_state.resultado.decode('latin-1', errors='replace').splitlines()[:80]
