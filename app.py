@@ -75,10 +75,10 @@ NATUREZA_POR_CST = {
 
     # ── CST 02 — Tabela 4.3.10 (v1.25, 30/03/2026) ──────────────────────
     '02': {
-        '1':   'Revenda de combustíveis – Alíquota zero',
-        '2':   'Revenda de fármacos e perfumarias – Alíquota zero',
-        '3':   'Revenda de veículos, máquinas e autopeças – Alíquota zero',
-        '4':   'Revenda de bebidas frias – Alíquota zero (até 30/04/2015)',
+        '001':   'Revenda de combustíveis – Alíquota zero',
+        '002':   'Revenda de fármacos e perfumarias – Alíquota zero',
+        '003':   'Revenda de veículos, máquinas e autopeças – Alíquota zero',
+        '004':   'Revenda de bebidas frias – Alíquota zero (até 30/04/2015)',
         '101': 'Gasolinas, Exceto Gasolina de Aviação',
         '102': 'Óleo Diesel',
         '103': 'Gás Liquefeito de Petróleo – GLP',
@@ -143,10 +143,10 @@ NATUREZA_POR_CST = {
 
     # ── CST 04 — Tabela 4.3.10 (v1.25, 30/03/2026) ──────────────────────
     '04': {
-        '1':   'Revenda de combustíveis – Alíquota zero',
-        '2':   'Revenda de fármacos e perfumarias – Alíquota zero',
-        '3':   'Revenda de veículos, máquinas e autopeças – Alíquota zero',
-        '4':   'Revenda de bebidas frias – Alíquota zero (até 30/04/2015)',
+        '001':   'Revenda de combustíveis – Alíquota zero',
+        '002':   'Revenda de fármacos e perfumarias – Alíquota zero',
+        '003':   'Revenda de veículos, máquinas e autopeças – Alíquota zero',
+        '004':   'Revenda de bebidas frias – Alíquota zero (até 30/04/2015)',
         '101': 'Gasolinas, Exceto Gasolina de Aviação',
         '102': 'Óleo Diesel',
         '103': 'Gás Liquefeito de Petróleo – GLP',
@@ -522,6 +522,33 @@ def _cst_entrada_para_saida(cst_entrada: str) -> str:
     """
     c = _normalizar_cst(cst_entrada)
     return CST_ENTRADA_PARA_SAIDA.get(c, c)
+
+ ==============================
+
+# DE-PARA INVERSO: CST SAÍDA → CST ENTRADA
+# Conforme arquivo "CST DE-Para entrada e saida.xlsx"
+# Usado no campo 3 do 0110 (CST Entrada) quando o produto
+# possui operação de saída com o CST correspondente.
+# ==============================
+CST_SAIDA_PARA_ENTRADA = {
+    '01': '50',  # Saída tributada alíq. básica       → Aquisição com direito a crédito básica
+    '02': '51',  # Saída tributada alíq. diferenciada → Aquisição com direito a crédito diferenciada
+    '08': '74',  # Saída sem incidência               → Aquisição sem incidência
+    '06': '73',  # Saída alíquota zero                → Aquisição com alíquota zero
+    '04': '70',  # Saída monofásica                   → Aquisição monofásica/substituição tributária
+    '49': '99',  # Outras saídas não tributadas        → Outras aquisições sem crédito
+}
+
+
+def _cst_saida_para_entrada_depara(cst_saida: str) -> str:
+    """
+    Converte CST de saída (01-49) para o CST de entrada equivalente
+    conforme De-Para oficial. Usado no campo 3 do 0110 (CST Entrada)
+    quando o produto é identificado por uma nota de saída com CST 01.
+    Se não houver mapeamento, retorna o CST de saída sem alteração.
+    """
+    c = _normalizar_cst(cst_saida)
+    return CST_SAIDA_PARA_ENTRADA.get(c, c)
 
 
 def get_natureza_por_cst(cst_pis: str, cst_cofins: str, config_natureza: dict) -> tuple:
@@ -1361,6 +1388,11 @@ def gerar_registros_produtos(
 # Exibe APENAS CSTs de saída obrigatórios encontrados na Planilha Cliente.
 # ==============================
 def render_configuracao_natureza(csts_obrigatorios: set) -> dict:
+    """
+    Renderiza o widget de configuração de Natureza de Receita.
+    Um único campo por CST preenche tanto PIS quanto COFINS
+    (mesma regra para ambos, conforme solicitado).
+    """
     st.markdown("### 🏷️ Natureza de PIS/COFINS — CSTs com Preenchimento Obrigatório")
 
     cfg_anterior = st.session_state.get('config_natureza', {})
@@ -1373,8 +1405,10 @@ def render_configuracao_natureza(csts_obrigatorios: set) -> dict:
         )
         planilha_carregada = True
     else:
-        csts_exibir = sorted(NATUREZA_POR_CST.keys(),
-                             key=lambda x: int(x) if x.isdigit() else 999)
+        csts_exibir = sorted(
+            NATUREZA_POR_CST.keys(),
+            key=lambda x: int(x) if x.isdigit() else 999
+        )
         planilha_carregada = False
 
     if planilha_carregada and csts_exibir:
@@ -1383,17 +1417,20 @@ def render_configuracao_natureza(csts_obrigatorios: set) -> dict:
             border-radius:4px; padding:10px 14px; margin:6px 0; font-size:13px;">
             ⚠️ <strong>CSTs com natureza obrigatória detectados:</strong>
             &nbsp;{' &nbsp;·&nbsp; '.join([f'<code>{c}</code>' for c in csts_exibir])}
-            <br><small>Configure a Natureza de Receita abaixo. Será preenchida no campo 18 do 0110
-            e nos campos 71/72 do 2030.</small>
-            </div>""", unsafe_allow_html=True
+            <br><small>Configure a Natureza de Receita abaixo.
+            O mesmo código será aplicado a PIS e COFINS (campo 18 do 0110
+            e campos 71/72 do 1030 e 2030).</small>
+            </div>""",
+            unsafe_allow_html=True,
         )
     elif planilha_carregada and not csts_exibir:
         st.markdown(
             """<div class="info-ok-box">
             ✅ <strong>Nenhum CST com natureza obrigatória detectado na Planilha Cliente.</strong><br>
-            <small>Os CSTs encontrados (01, 02, 03, 04, 05, 49, 50, 70, 98, 99) não exigem
-            Natureza de Receita. A conversão pode prosseguir normalmente.</small>
-            </div>""", unsafe_allow_html=True
+            <small>Os CSTs encontrados não exigem Natureza de Receita.
+            A conversão pode prosseguir normalmente.</small>
+            </div>""",
+            unsafe_allow_html=True,
         )
         st.session_state['config_natureza'] = config
         return config
@@ -1402,13 +1439,15 @@ def render_configuracao_natureza(csts_obrigatorios: set) -> dict:
             """<div class="natureza-box">
             ℹ️ Faça o upload da <strong>Planilha Cliente</strong> primeiro para que apenas
             os CSTs relevantes sejam exibidos aqui.
-            </div>""", unsafe_allow_html=True
+            </div>""",
+            unsafe_allow_html=True,
         )
 
     if not csts_exibir:
         st.session_state['config_natureza'] = config
         return config
 
+    # ── Tabela de referência ──────────────────────────────────────────────
     with st.expander("📊 Tabela de Naturezas de Receita (CSTs obrigatórios)", expanded=False):
         rows_tabela = []
         for cst_cod in csts_exibir:
@@ -1416,8 +1455,9 @@ def render_configuracao_natureza(csts_obrigatorios: set) -> dict:
             cst_descr = CST_DESCRICOES.get(cst_cod, f'CST {cst_cod}')
             for nat_cod, nat_descr in naturezas.items():
                 rows_tabela.append({
-                    'CST': cst_cod, 'Descrição CST': cst_descr,
-                    'Cód. Natureza': nat_cod,
+                    'CST':                              cst_cod,
+                    'Descrição CST':                    cst_descr,
+                    'Cód. Natureza':                    nat_cod,
                     'Descrição da Natureza de Receita': nat_descr,
                 })
         if rows_tabela:
@@ -1428,7 +1468,8 @@ def render_configuracao_natureza(csts_obrigatorios: set) -> dict:
                 label="⬇ Baixar Tabela (.csv)",
                 data=csv_tabela.encode('utf-8-sig'),
                 file_name="natureza_receita.csv",
-                mime="text/csv", use_container_width=False,
+                mime="text/csv",
+                use_container_width=False,
             )
 
     st.markdown("---")
@@ -1442,84 +1483,122 @@ def render_configuracao_natureza(csts_obrigatorios: set) -> dict:
         for cst_cod in csts_exibir:
             naturezas = NATUREZA_POR_CST.get(cst_cod, {})
             cst_descr = CST_DESCRICOES.get(cst_cod, f'CST {cst_cod}')
+
             st.markdown(
                 f"<div class='cst-header-obrig'>{cst_descr} &nbsp;⚠ OBRIGATÓRIO</div>",
-                unsafe_allow_html=True
+                unsafe_allow_html=True,
             )
+
+            # ── Opções de natureza ────────────────────────────────────────
             nat_opcoes_cod   = [''] + list(naturezas.keys())
             nat_opcoes_label = ['-- Selecione a natureza --'] + [
-                f"{k} – {v[:72]}{'...' if len(v) > 72 else ''}"
+                f"{k} – {v[:80]}{'...' if len(v) > 80 else ''}"
                 for k, v in naturezas.items()
             ]
-            chave_nat_pis  = f"cst_{cst_cod}_nat_pis"
-            chave_nat_cof  = f"cst_{cst_cod}_nat_cofins"
-            chave_base_pis = f"cst_{cst_cod}_base_pis"
-            chave_base_cof = f"cst_{cst_cod}_base_cofins"
-            chave_vinc_pis = f"cst_{cst_cod}_vinc_pis"
-            chave_vinc_cof = f"cst_{cst_cod}_vinc_cofins"
 
-            val_nat_pis  = cfg_anterior.get(chave_nat_pis,  '')
-            val_nat_cof  = cfg_anterior.get(chave_nat_cof,  '')
-            val_base_pis = cfg_anterior.get(chave_base_pis, '')
-            val_base_cof = cfg_anterior.get(chave_base_cof, '')
-            val_vinc_pis = cfg_anterior.get(chave_vinc_pis, '')
-            val_vinc_cof = cfg_anterior.get(chave_vinc_cof, '')
+            # Chaves unificadas: nat usa uma só chave; base e vínculo também
+            chave_nat  = f"cst_{cst_cod}_nat"       # ← único campo para PIS e COFINS
+            chave_base = f"cst_{cst_cod}_base"
+            chave_vinc = f"cst_{cst_cod}_vinc"
 
-            idx_nat_pis  = nat_opcoes_cod.index(val_nat_pis)  if val_nat_pis  in nat_opcoes_cod  else 0
-            idx_nat_cof  = nat_opcoes_cod.index(val_nat_cof)  if val_nat_cof  in nat_opcoes_cod  else 0
-            idx_base_pis = opcoes_base_cods.index(val_base_pis) if val_base_pis in opcoes_base_cods else 0
-            idx_base_cof = opcoes_base_cods.index(val_base_cof) if val_base_cof in opcoes_base_cods else 0
-            idx_vinc_pis = opcoes_vinc_cods.index(val_vinc_pis) if val_vinc_pis in opcoes_vinc_cods else 0
-            idx_vinc_cof = opcoes_vinc_cods.index(val_vinc_cof) if val_vinc_cof in opcoes_vinc_cods else 0
+            # Retrocompatibilidade: lê chave antiga (nat_pis) se a nova não existir
+            val_nat  = (cfg_anterior.get(chave_nat)
+                        or cfg_anterior.get(f"cst_{cst_cod}_nat_pis", ''))
+            val_base = (cfg_anterior.get(chave_base)
+                        or cfg_anterior.get(f"cst_{cst_cod}_base_pis", ''))
+            val_vinc = (cfg_anterior.get(chave_vinc)
+                        or cfg_anterior.get(f"cst_{cst_cod}_vinc_pis", ''))
 
-            col_pis, col_cof = st.columns(2)
-            with col_pis:
-                st.markdown("<span style='color:#FF8000;font-weight:bold;font-size:12px;'>🔵 PIS</span>",
-                            unsafe_allow_html=True)
-                sel = st.selectbox(f"Natureza PIS {cst_cod}", nat_opcoes_label, index=idx_nat_pis,
-                                   key=f"nat_pis_{cst_cod}", label_visibility="collapsed")
-                config[chave_nat_pis] = nat_opcoes_cod[nat_opcoes_label.index(sel)]
-                sel = st.selectbox(f"Base Créd PIS {cst_cod}", opcoes_base_labels, index=idx_base_pis,
-                                   key=f"base_pis_{cst_cod}", label_visibility="collapsed",
-                                   help="Base do Crédito PIS — campo 67 do 1030")
-                config[chave_base_pis] = opcoes_base_cods[opcoes_base_labels.index(sel)]
-                sel = st.selectbox(f"Vínculo PIS {cst_cod}", opcoes_vinc_labels, index=idx_vinc_pis,
-                                   key=f"vinc_pis_{cst_cod}", label_visibility="collapsed",
-                                   help="Vínculo de Crédito PIS — campo 72 do 1030 / campo 77 do 2030")
-                config[chave_vinc_pis] = opcoes_vinc_cods[opcoes_vinc_labels.index(sel)]
-            with col_cof:
-                st.markdown("<span style='color:#FF8000;font-weight:bold;font-size:12px;'>🟠 COFINS</span>",
-                            unsafe_allow_html=True)
-                sel = st.selectbox(f"Natureza COFINS {cst_cod}", nat_opcoes_label, index=idx_nat_cof,
-                                   key=f"nat_cof_{cst_cod}", label_visibility="collapsed")
-                config[chave_nat_cof] = nat_opcoes_cod[nat_opcoes_label.index(sel)]
-                sel = st.selectbox(f"Base Créd COFINS {cst_cod}", opcoes_base_labels, index=idx_base_cof,
-                                   key=f"base_cof_{cst_cod}", label_visibility="collapsed",
-                                   help="Base do Crédito COFINS — campo 67 do 1030")
-                config[chave_base_cof] = opcoes_base_cods[opcoes_base_labels.index(sel)]
-                sel = st.selectbox(f"Vínculo COFINS {cst_cod}", opcoes_vinc_labels, index=idx_vinc_cof,
-                                   key=f"vinc_cof_{cst_cod}", label_visibility="collapsed",
-                                   help="Vínculo de Crédito COFINS — campo 73 do 1030 / campo 78 do 2030")
-                config[chave_vinc_cof] = opcoes_vinc_cods[opcoes_vinc_labels.index(sel)]
+            idx_nat  = nat_opcoes_cod.index(val_nat)   if val_nat  in nat_opcoes_cod  else 0
+            idx_base = opcoes_base_cods.index(val_base) if val_base in opcoes_base_cods else 0
+            idx_vinc = opcoes_vinc_cods.index(val_vinc) if val_vinc in opcoes_vinc_cods else 0
+
+            # ── Natureza (campo único — aplica a PIS e COFINS) ───────────
+            st.markdown(
+                "<span style='color:#FF8000;font-weight:bold;font-size:12px;'>"
+                "🟠 Natureza de Receita — aplica a PIS e COFINS</span>",
+                unsafe_allow_html=True,
+            )
+            sel_nat = st.selectbox(
+                f"Natureza {cst_cod}",
+                nat_opcoes_label,
+                index=idx_nat,
+                key=f"nat_{cst_cod}",
+                label_visibility="collapsed",
+                help="Código preenchido nos campos de Natureza de PIS e COFINS (mesmo valor para ambos).",
+            )
+            nat_val = nat_opcoes_cod[nat_opcoes_label.index(sel_nat)]
+
+            # Propaga o mesmo valor para PIS e COFINS nas chaves de saída
+            config[chave_nat]                        = nat_val   # chave nova (unificada)
+            config[f"cst_{cst_cod}_nat_pis"]         = nat_val   # chave legada PIS
+            config[f"cst_{cst_cod}_nat_cofins"]      = nat_val   # chave legada COFINS
+
+            # ── Base de crédito e Vínculo (linha única) ──────────────────
+            col_base, col_vinc = st.columns(2)
+            with col_base:
+                st.markdown(
+                    "<span style='color:#888;font-size:11px;'>Base do Crédito</span>",
+                    unsafe_allow_html=True,
+                )
+                sel_base = st.selectbox(
+                    f"Base {cst_cod}",
+                    opcoes_base_labels,
+                    index=idx_base,
+                    key=f"base_{cst_cod}",
+                    label_visibility="collapsed",
+                    help="Base do Crédito PIS/COFINS — campo 5 do 0110 / campo 67 do 1030",
+                )
+                base_val = opcoes_base_cods[opcoes_base_labels.index(sel_base)]
+                config[chave_base]                       = base_val
+                config[f"cst_{cst_cod}_base_pis"]        = base_val
+                config[f"cst_{cst_cod}_base_cofins"]     = base_val
+
+            with col_vinc:
+                st.markdown(
+                    "<span style='color:#888;font-size:11px;'>Vínculo do Crédito</span>",
+                    unsafe_allow_html=True,
+                )
+                sel_vinc = st.selectbox(
+                    f"Vínculo {cst_cod}",
+                    opcoes_vinc_labels,
+                    index=idx_vinc,
+                    key=f"vinc_{cst_cod}",
+                    label_visibility="collapsed",
+                    help="Vínculo de Crédito PIS/COFINS — campo 4 do 0110 / campo 72 do 1030",
+                )
+                vinc_val = opcoes_vinc_cods[opcoes_vinc_labels.index(sel_vinc)]
+                config[chave_vinc]                       = vinc_val
+                config[f"cst_{cst_cod}_vinc_pis"]        = vinc_val
+                config[f"cst_{cst_cod}_vinc_cofins"]     = vinc_val
+
             st.markdown("")
 
+        # ── Resumo das configurações ativas ──────────────────────────────
         st.markdown("---")
-        configs_ativas = {k: v for k, v in config.items() if v}
+        # Exibe apenas as chaves unificadas (evita duplicidade no resumo)
+        configs_ativas = {
+            k: v for k, v in config.items()
+            if v and not k.endswith(('_pis', '_cofins'))  # oculta chaves legadas do resumo
+        }
         if configs_ativas:
             st.markdown("**✅ Configurações ativas:**")
             cols_res = st.columns(3)
             tipo_map = {
-                'nat_pis': 'Natureza PIS', 'nat_cofins': 'Natureza COFINS',
-                'base_pis': 'Base Créd. PIS', 'base_cofins': 'Base Créd. COFINS',
-                'vinc_pis': 'Vínculo PIS', 'vinc_cofins': 'Vínculo COFINS',
+                'nat':  'Natureza PIS+COFINS',
+                'base': 'Base do Crédito',
+                'vinc': 'Vínculo do Crédito',
             }
             for i, (chave, valor) in enumerate(configs_ativas.items()):
-                partes = chave.split('_'); cst_n = partes[1]; tipo = '_'.join(partes[2:])
+                partes = chave.split('_')   # ex: ['cst', '06', 'nat']
+                cst_n  = partes[1]
+                tipo   = partes[2]
                 cols_res[i % 3].markdown(
                     f"<div class='natureza-ativa'>"
                     f"<strong>CST {cst_n} / {tipo_map.get(tipo, tipo)}</strong><br>"
                     f"<span style='color:#1B5E20;'>Código: {valor}</span>"
-                    f"</div>", unsafe_allow_html=True
+                    f"</div>",
+                    unsafe_allow_html=True,
                 )
         else:
             st.warning("⚠ Nenhuma natureza configurada. Configure antes de converter.")
