@@ -15,7 +15,7 @@ from openpyxl.utils import get_column_letter
 # ==============================
 # VERSÃO
 # ==============================
-VERSAO = "V1.3"
+VERSAO = "V1.4"
 
 # ==============================
 # TEMA TR
@@ -108,7 +108,10 @@ def encode_ansi_seguro(conteudo: str, log: list) -> bytes:
             resultado.append(b'?')
             substituicoes += 1
     if substituicoes:
-        log.append(f"AVISO: {substituicoes} caractere(s) fora do padrão ANSI substituídos por '?'.")
+        log.append(
+            f"AVISO: {substituicoes} caractere(s) fora do padrão ANSI "
+            f"substituídos por '?'."
+        )
     return b''.join(resultado)
 
 
@@ -138,32 +141,121 @@ def parse_dominio(content: str) -> dict:
 
 
 # ==============================
-# ÍNDICES DE CAMPOS
+# MAPEAMENTO DE ÍNDICES — VERIFICADO PELO ARQUIVO DE EXEMPLO
+# ==============================
+#
+# Registro 1000 (após remoção dos pipes das bordas):
+# Pos : Valor no exemplo
+# [0] : 1000
+# [1] : 1              ← NUM_NF
+# [2] : 22222222000191 ← CNPJ_EMIT
+# [3] : (vazio)
+# [4] : 1              ← IND_OPER (1=entrada)
+# [5] : 1102           ← CFOP  ✅
+# [6] : (vazio)
+# [7] : 15
+# [8] : 1
+# [9] : (vazio)
+# [10]: (vazio)
+# [11]: 10/09/2015     ← DT_EMISSAO
+# [12]: 10/09/2015     ← DT_ENTRADA
+# [13]: 5571,24        ← VL_TOTAL
+#
+# Registro 1030 (após remoção dos pipes das bordas):
+# Pos : Valor no exemplo
+# [0] : 1030
+# [1] : 1              ← NUM_ITEM
+# [2] : 1,000          ← QTD
+# [3] : 544,950        ← VL_UNIT
+# [4] : 0
+# [5] : 0
+# [6] : 1
+# [7] : 10/09/2015     ← DT_DOC
+# [8] : (vazio)
+# [9] : 00             ← COD_SIT
+# [10]: 544,95         ← VL_ITEM
+# [11]: 0,00           ← VL_DESC
+# [12]: 544,95
+# [13]: 0,00
+# [14]: 17,00          ← ALIQ_ICMS
+# [15]: (vazio)
+# [16]: (vazio)
+# [17]: 0,00
+# [18]: 0,00
+# [19]: 0,00
+# [20]: 0,000
+# [21]: 92,64          ← VL_ICMS
+# [22]: 0,00
+# [23]: 0,00
+# [24]: 0,00
+# [25]: (vazio)
+# [26]: 544,950
+# [27]: 0,00
+# [28]: 02
+# [29]: 0,00
+# [30]: 0,00
+# [31]: 0,00
+# [32]: 0,00
+# [33]: 1102           ← CFOP  ✅
+# [34]: (vazio)
+# ...
+#
 # ==============================
 IDX_1000_NUM_NF     = 1
 IDX_1000_CNPJ_EMIT  = 2
-IDX_1000_CFOP       = 4
+IDX_1000_IND_OPER   = 4
+IDX_1000_CFOP       = 5   # ← CORRIGIDO (era 4)
 IDX_1000_DT_EMISSAO = 11
 IDX_1000_DT_ENTRADA = 12
 IDX_1000_VL_TOTAL   = 13
+
 IDX_1030_NUM_ITEM   = 1
+IDX_1030_QTD        = 2
+IDX_1030_VL_UNIT    = 3
+IDX_1030_DT_DOC     = 7
+IDX_1030_COD_SIT    = 9
 IDX_1030_VL_ITEM    = 10
-IDX_1030_CFOP       = 34
+IDX_1030_VL_DESC    = 11
+IDX_1030_ALIQ_ICMS  = 14
+IDX_1030_VL_ICMS    = 21
+IDX_1030_CFOP       = 33  # ← CORRIGIDO (era 34)
 
 
 def _campo(campos: list, idx: int, default: str = '') -> str:
+    """Retorna o campo pelo índice com fallback seguro."""
     return campos[idx].strip() if len(campos) > idx else default
+
+
+# ==============================
+# DIAGNÓSTICO DE ÍNDICES (helper de debug)
+# ==============================
+def diagnosticar_indices(parsed: dict, log: list):
+    """
+    Loga os primeiros registros 1000 e 1030 com seus índices
+    para facilitar a verificação do mapeamento.
+    """
+    for tipo in ('1000', '1030'):
+        if tipo in parsed['por_tipo']:
+            campos, num_linha = parsed['por_tipo'][tipo][0]
+            log.append(f"── Diagnóstico {tipo} (linha {num_linha}) ──")
+            for i, v in enumerate(campos):
+                log.append(f"  [{i:>2}] = '{v}'")
 
 
 # ==============================
 # EXTRAÇÃO DE CFOPs
 # ==============================
-def extrair_cfops_do_arquivo(parsed: dict) -> dict:
+def extrair_cfops_do_arquivo(parsed: dict, log: list) -> dict:
     cfops = {}
 
     def registrar(cfop_raw: str, tipo_reg: str):
-        cfop = str(cfop_raw).strip().zfill(4)
-        if not cfop or cfop in ('0000', 'CFOP', 'nan', 'NAN') or not cfop.isdigit():
+        cfop = str(cfop_raw).strip()
+        # Normaliza para 4 dígitos apenas se for numérico
+        if not cfop or not cfop.isdigit():
+            return
+        cfop = cfop.zfill(4)
+        # Filtra valores claramente inválidos
+        if cfop in ('0000',):
             return
         if cfop not in cfops:
             primeiro = cfop[0]
@@ -173,19 +265,50 @@ def extrair_cfops_do_arquivo(parsed: dict) -> dict:
                 tipo_op = 'Saída'
             else:
                 tipo_op = 'Desconhecido'
-            cfops[cfop] = {'registros': set(), 'ocorrencias': 0, 'tipo_operacao': tipo_op}
+            cfops[cfop] = {
+                'registros':     set(),
+                'ocorrencias':   0,
+                'tipo_operacao': tipo_op,
+            }
         cfops[cfop]['registros'].add(tipo_reg)
         cfops[cfop]['ocorrencias'] += 1
 
-    for tipo, campos, _ in parsed['linhas_ordenadas']:
+    total_1000 = 0
+    total_1030 = 0
+
+    for tipo, campos, num_linha in parsed['linhas_ordenadas']:
         if tipo == '1000':
-            v = _campo(campos, IDX_1000_CFOP)
-            if v:
-                registrar(v, '1000')
+            total_1000 += 1
+            cfop_val = _campo(campos, IDX_1000_CFOP)
+            log.append(
+                f"  1000 linha {num_linha}: "
+                f"idx[{IDX_1000_CFOP}]='{cfop_val}' "
+                f"(total campos={len(campos)})"
+            )
+            if cfop_val:
+                registrar(cfop_val, '1000')
+
         elif tipo == '1030':
-            v = _campo(campos, IDX_1030_CFOP)
-            if v:
-                registrar(v, '1030')
+            total_1030 += 1
+            cfop_val = _campo(campos, IDX_1030_CFOP)
+            # Só loga o primeiro item para não poluir o log
+            if total_1030 <= 2:
+                log.append(
+                    f"  1030 linha {num_linha}: "
+                    f"idx[{IDX_1030_CFOP}]='{cfop_val}' "
+                    f"(total campos={len(campos)})"
+                )
+            if cfop_val:
+                registrar(cfop_val, '1030')
+
+    log.append(
+        f"Registros lidos: {total_1000} × 1000 | {total_1030} × 1030"
+    )
+    log.append(
+        f"CFOPs únicos encontrados: {len(cfops)} — "
+        f"{sorted(cfops.keys())}"
+    )
+
     return cfops
 
 
@@ -222,7 +345,7 @@ DESCRICOES_CFOP = {
     '2251': 'Compra p/ ativo imobilizado - fora do estado',
     '2301': 'Aquisição de serviço de transporte - fora do estado',
     '2401': 'Compra p/ uso e consumo - fora do estado',
-    '2901': 'Outras entradas de mercadorias não especificadas - fora do estado',
+    '2901': 'Outras entradas não especificadas - fora do estado',
     '3101': 'Compra p/ industrialização - exterior',
     '3102': 'Compra p/ comercialização - exterior',
     '5101': 'Venda de produção do estabelecimento - dentro do estado',
@@ -236,8 +359,8 @@ DESCRICOES_CFOP = {
     '5251': 'Venda de ativo imobilizado - dentro do estado',
     '5301': 'Prestação de serviço de transporte - dentro do estado',
     '5351': 'Prestação de serviço de comunicação - dentro do estado',
-    '5401': 'Venda de produção - substituição tributária - dentro do estado',
-    '5403': 'Venda de mercadoria - substituição tributária - dentro do estado',
+    '5401': 'Venda de produção - subst. tributária - dentro do estado',
+    '5403': 'Venda de mercadoria - subst. tributária - dentro do estado',
     '5501': 'Remessa de mercadoria p/ formação de lote de exportação',
     '5601': 'Transferência de crédito de ICMS - dentro do estado',
     '5701': 'Venda de mercadoria em consignação - dentro do estado',
@@ -251,13 +374,13 @@ DESCRICOES_CFOP = {
     '6202': 'Devolução de compra p/ comercialização - fora do estado',
     '6251': 'Venda de ativo imobilizado - fora do estado',
     '6301': 'Prestação de serviço de transporte - fora do estado',
-    '6401': 'Venda de produção - substituição tributária - fora do estado',
-    '6403': 'Venda de mercadoria - substituição tributária - fora do estado',
+    '6401': 'Venda de produção - subst. tributária - fora do estado',
+    '6403': 'Venda de mercadoria - subst. tributária - fora do estado',
     '6501': 'Remessa p/ formação de lote de exportação - fora do estado',
     '6601': 'Transferência de crédito de ICMS - fora do estado',
     '6701': 'Venda de mercadoria em consignação - fora do estado',
     '6801': 'Remessa p/ industrialização por encomenda - fora do estado',
-    '6901': 'Outras saídas de mercadorias não especificadas - fora do estado',
+    '6901': 'Outras saídas não especificadas - fora do estado',
 }
 
 
@@ -296,11 +419,12 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict) -> bytes:
         key=lambda x: (0 if x[1]['tipo_operacao'] == 'Entrada' else 1, x[0])
     )
 
-    # ── Aba 1: Acumuladores ──────────────────────────────────────────
+    # ── Aba 1: Acumuladores ──────────────────────────────────────────────
     ws1 = wb.active
     ws1.title = "Acumuladores"
     ws1.sheet_view.showGridLines = False
 
+    # Banner
     ws1.merge_cells("A1:E1")
     ws1.row_dimensions[1].height = 36
     c = ws1["A1"]
@@ -309,6 +433,7 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict) -> bytes:
     c.font      = Font(name='Segoe UI', bold=True, size=13, color=COR_LARANJA)
     c.alignment = left_al()
 
+    # Subtítulo laranja
     ws1.merge_cells("A2:E2")
     ws1.row_dimensions[2].height = 20
     c2 = ws1["A2"]
@@ -320,48 +445,54 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict) -> bytes:
     c2.font      = Font(name='Segoe UI', size=9, color=COR_BRANCO)
     c2.alignment = left_al()
 
+    # Instrução
     ws1.merge_cells("A3:E3")
     ws1.row_dimensions[3].height = 18
     c3 = ws1["A3"]
-    c3.value     = "⚠  Preencha a coluna ACUMULADOR para cada CFOP antes de fazer o upload no conversor."
+    c3.value     = (
+        "⚠  Preencha a coluna ACUMULADOR para cada CFOP "
+        "antes de fazer o upload no conversor."
+    )
     c3.fill      = fill(COR_CINZA_CLR)
     c3.font      = Font(name='Segoe UI', bold=True, size=9, color=COR_CINZA_ESC)
     c3.alignment = left_al()
 
     ws1.row_dimensions[4].height = 6
 
-    # Cabeçalho
+    # Cabeçalho da tabela
     ws1.row_dimensions[5].height = 22
     cabecalhos = ['CFOP', 'DESCRIÇÃO', 'TIPO OPERAÇÃO', 'OCORRÊNCIAS', 'ACUMULADOR']
     col_widths  = [10,     48,          16,               14,            16]
+
     for ci, (cab, w) in enumerate(zip(cabecalhos, col_widths), start=1):
         ws1.column_dimensions[get_column_letter(ci)].width = w
-        cell = ws1.cell(row=5, column=ci, value=cab)
+        cell           = ws1.cell(row=5, column=ci, value=cab)
         cell.fill      = fill(COR_LARANJA)
         cell.font      = Font(name='Segoe UI', bold=True, size=11, color=COR_BRANCO)
         cell.alignment = center()
         cell.border    = borda_fina
 
+    # Dados
     linha = 6
     for idx, (cfop, info) in enumerate(cfops_ord):
         ws1.row_dimensions[linha].height = 18
-        bg = COR_CINZA_CLR if idx % 2 == 0 else COR_BRANCO
-        if info['tipo_operacao'] != 'Entrada':
-            bg = COR_LARANJA_C if idx % 2 == 0 else COR_BRANCO
+        bg = (COR_CINZA_CLR if idx % 2 == 0 else COR_BRANCO) \
+             if info['tipo_operacao'] == 'Entrada' \
+             else (COR_LARANJA_C if idx % 2 == 0 else COR_BRANCO)
 
         descricao = DESCRICOES_CFOP.get(cfop, '— preencha a descrição —')
         valores   = [cfop, descricao, info['tipo_operacao'], info['ocorrencias'], '']
 
         for ci, valor in enumerate(valores, start=1):
-            cell = ws1.cell(row=linha, column=ci, value=valor)
+            cell        = ws1.cell(row=linha, column=ci, value=valor)
             cell.border = borda_fina
             if ci == 1:
-                cell.fill = fill(bg)
-                cell.font = Font(name='Segoe UI', bold=True, size=10, color=COR_CINZA_ESC)
+                cell.fill      = fill(bg)
+                cell.font      = Font(name='Segoe UI', bold=True, size=10, color=COR_CINZA_ESC)
                 cell.alignment = center()
             elif ci == 3:
                 cell.fill = fill(bg)
-                cor = "1B5E20" if info['tipo_operacao'] == 'Entrada' else "B71C1C"
+                cor       = "1B5E20" if info['tipo_operacao'] == 'Entrada' else "B71C1C"
                 cell.font = Font(name='Segoe UI', bold=True, size=10, color=cor)
                 cell.alignment = center()
             elif ci == 4:
@@ -370,10 +501,10 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict) -> bytes:
                 cell.alignment = center()
             elif ci == 5:
                 # Coluna ACUMULADOR — destaque laranja para preenchimento
-                cell.fill   = fill("FFF8F0")
-                cell.font   = Font(name='Segoe UI', bold=True, size=10, color=COR_LARANJA)
+                cell.fill      = fill("FFF8F0")
+                cell.font      = Font(name='Segoe UI', bold=True, size=10, color=COR_LARANJA)
                 cell.alignment = center()
-                cell.border = Border(
+                cell.border    = Border(
                     left=Side(style='medium', color=COR_LARANJA),
                     right=Side(style='medium', color=COR_LARANJA),
                     top=Side(style='thin',    color="CCCCCC"),
@@ -388,18 +519,23 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict) -> bytes:
     # Rodapé
     ws1.merge_cells(f"A{linha}:E{linha}")
     ws1.row_dimensions[linha].height = 18
-    cr = ws1.cell(row=linha, column=1,
-                  value="Thomson Reuters  |  Domínio Sistemas  |  Gerado automaticamente")
+    cr = ws1.cell(
+        row=linha, column=1,
+        value="Thomson Reuters  |  Domínio Sistemas  |  Gerado automaticamente"
+    )
     cr.fill      = fill(COR_CINZA_ESC)
     cr.font      = Font(name='Segoe UI', size=8, color="888888")
     cr.alignment = Alignment(horizontal='right', vertical='center')
 
-    ws1.freeze_panes = "A6"
+    ws1.freeze_panes   = "A6"
     ws1.auto_filter.ref = f"A5:E{linha - 1}"
 
-    # ── Aba 2: CFOPs Encontrados ──────────────────────────────────────
+    # ── Aba 2: CFOPs Encontrados ─────────────────────────────────────────
     ws2 = wb.create_sheet(title="CFOPs Encontrados")
     ws2.sheet_view.showGridLines = False
+
+    n_ent = sum(1 for v in cfops_dict.values() if v['tipo_operacao'] == 'Entrada')
+    n_sai = sum(1 for v in cfops_dict.values() if v['tipo_operacao'] == 'Saída')
 
     ws2.merge_cells("A1:F1")
     ws2.row_dimensions[1].height = 36
@@ -409,28 +545,27 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict) -> bytes:
     c.font      = Font(name='Segoe UI', bold=True, size=13, color=COR_LARANJA)
     c.alignment = left_al()
 
-    n_ent = sum(1 for v in cfops_dict.values() if v['tipo_operacao'] == 'Entrada')
-    n_sai = sum(1 for v in cfops_dict.values() if v['tipo_operacao'] == 'Saída')
-
     ws2.merge_cells("A2:F2")
     ws2.row_dimensions[2].height = 20
     c2 = ws2["A2"]
     c2.value = (
         f"Analisado em {datetime.now().strftime('%d/%m/%Y %H:%M')}  |  "
-        f"Total: {len(cfops_dict)} CFOP(s)  |  Entradas: {n_ent}  |  Saídas: {n_sai}"
+        f"Total: {len(cfops_dict)} CFOP(s)  |  "
+        f"Entradas: {n_ent}  |  Saídas: {n_sai}"
     )
     c2.fill      = fill(COR_LARANJA)
     c2.font      = Font(name='Segoe UI', size=9, color=COR_BRANCO)
     c2.alignment = left_al()
 
     ws2.row_dimensions[3].height = 6
-
     ws2.row_dimensions[4].height = 22
+
     cab2  = ['CFOP', 'DESCRIÇÃO', 'TIPO OPERAÇÃO', 'REGISTROS', 'OCORRÊNCIAS', 'STATUS']
     wids2 = [10,     48,          16,               14,           14,            22]
+
     for ci, (cab, w) in enumerate(zip(cab2, wids2), start=1):
         ws2.column_dimensions[get_column_letter(ci)].width = w
-        cell = ws2.cell(row=4, column=ci, value=cab)
+        cell           = ws2.cell(row=4, column=ci, value=cab)
         cell.fill      = fill(COR_LARANJA)
         cell.font      = Font(name='Segoe UI', bold=True, size=11, color=COR_BRANCO)
         cell.alignment = center()
@@ -448,41 +583,43 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict) -> bytes:
 
         vals = [cfop, descr, info['tipo_operacao'], regs, info['ocorrencias'], status]
         for ci, valor in enumerate(vals, start=1):
-            cell = ws2.cell(row=linha2, column=ci, value=valor)
+            cell        = ws2.cell(row=linha2, column=ci, value=valor)
             cell.border = borda_fina
             if ci == 6:
                 cell.fill = fill(bg_st)
-                cor = "1B5E20" if mapeado else "B71C1C"
+                cor       = "1B5E20" if mapeado else "B71C1C"
                 cell.font = Font(name='Segoe UI', bold=True, size=10, color=cor)
                 cell.alignment = center()
             elif ci == 1:
-                cell.fill = fill(bg)
-                cell.font = Font(name='Segoe UI', bold=True, size=10, color=COR_CINZA_ESC)
+                cell.fill      = fill(bg)
+                cell.font      = Font(name='Segoe UI', bold=True, size=10, color=COR_CINZA_ESC)
                 cell.alignment = center()
             elif ci == 3:
                 cell.fill = fill(bg)
-                cor = "1B5E20" if info['tipo_operacao'] == 'Entrada' else "B71C1C"
+                cor       = "1B5E20" if info['tipo_operacao'] == 'Entrada' else "B71C1C"
                 cell.font = Font(name='Segoe UI', bold=True, size=10, color=cor)
                 cell.alignment = center()
             elif ci in (4, 5):
-                cell.fill = fill(bg)
-                cell.font = Font(name='Segoe UI', size=10, color=COR_CINZA_ESC)
+                cell.fill      = fill(bg)
+                cell.font      = Font(name='Segoe UI', size=10, color=COR_CINZA_ESC)
                 cell.alignment = center()
             else:
-                cell.fill = fill(bg)
-                cell.font = Font(name='Segoe UI', size=10, color=COR_CINZA_ESC)
+                cell.fill      = fill(bg)
+                cell.font      = Font(name='Segoe UI', size=10, color=COR_CINZA_ESC)
                 cell.alignment = left_al()
         linha2 += 1
 
     ws2.merge_cells(f"A{linha2}:F{linha2}")
     ws2.row_dimensions[linha2].height = 18
-    cr2 = ws2.cell(row=linha2, column=1,
-                   value="Thomson Reuters  |  Domínio Sistemas  |  Gerado automaticamente")
+    cr2 = ws2.cell(
+        row=linha2, column=1,
+        value="Thomson Reuters  |  Domínio Sistemas  |  Gerado automaticamente"
+    )
     cr2.fill      = fill(COR_CINZA_ESC)
     cr2.font      = Font(name='Segoe UI', size=8, color="888888")
     cr2.alignment = Alignment(horizontal='right', vertical='center')
 
-    ws2.freeze_panes = "A5"
+    ws2.freeze_panes    = "A5"
     ws2.auto_filter.ref = f"A4:F{linha2 - 1}"
 
     buf = io.BytesIO()
@@ -507,7 +644,9 @@ def carregar_acumuladores(arquivo_bytes: bytes, nome_arquivo: str, log: list) ->
         df.columns = [str(c).strip().upper() for c in df.columns]
 
         if 'CFOP' not in df.columns or 'ACUMULADOR' not in df.columns:
-            log.append("ERRO: O arquivo deve conter as colunas 'CFOP' e 'ACUMULADOR'.")
+            log.append(
+                "ERRO: O arquivo deve conter as colunas 'CFOP' e 'ACUMULADOR'."
+            )
             return None
 
         tabela = {}
@@ -542,7 +681,7 @@ def carregar_acumuladores(arquivo_bytes: bytes, nome_arquivo: str, log: list) ->
 
 def get_acumulador(cfop: str, tabela: dict, nao_mapeados: set) -> str:
     cfop_norm = str(cfop).strip().zfill(4)
-    acum = tabela.get(cfop_norm)
+    acum      = tabela.get(cfop_norm)
     if acum is None:
         nao_mapeados.add(cfop_norm)
         return '9999'
@@ -563,11 +702,12 @@ def extrair_notas_com_itens(parsed, tabela_acum, nao_mapeados, log):
         elif tipo == '1000':
             if nota_atual is not None:
                 notas.append(nota_atual)
+            cfop_nf    = _campo(campos, IDX_1000_CFOP)
             nota_atual = {
                 'num_nf':      _campo(campos, IDX_1000_NUM_NF),
                 'cnpj_emit':   _campo(campos, IDX_1000_CNPJ_EMIT),
-                'cfop_nf':     _campo(campos, IDX_1000_CFOP),
-                'acum_nf':     get_acumulador(_campo(campos, IDX_1000_CFOP), tabela_acum, nao_mapeados),
+                'cfop_nf':     cfop_nf,
+                'acum_nf':     get_acumulador(cfop_nf, tabela_acum, nao_mapeados),
                 'dt_emissao':  _campo(campos, IDX_1000_DT_EMISSAO),
                 'dt_entrada':  _campo(campos, IDX_1000_DT_ENTRADA),
                 'vl_total':    _campo(campos, IDX_1000_VL_TOTAL),
@@ -607,12 +747,13 @@ def extrair_notas_com_itens(parsed, tabela_acum, nao_mapeados, log):
         notas.append(nota_atual)
 
     def sort_key(n):
+        dt = datetime.min
         for fmt in ('%d/%m/%Y', '%Y-%m-%d'):
             try:
                 dt = datetime.strptime(n['dt_emissao'], fmt)
                 break
             except Exception:
-                dt = datetime.min
+                pass
         try:
             num = int(n['num_nf'])
         except Exception:
@@ -625,7 +766,10 @@ def extrair_notas_com_itens(parsed, tabela_acum, nao_mapeados, log):
             key=lambda it: int(it['num_item']) if it['num_item'].isdigit() else 0
         )
 
-    log.append(f"Hierarquia montada: {len(notas)} nota(s) ordenada(s) por data e número.")
+    log.append(
+        f"Hierarquia montada: {len(notas)} nota(s) ordenada(s) "
+        f"por data de emissão e número."
+    )
     return notas
 
 
@@ -786,23 +930,21 @@ def main():
             <div class="instrucoes-box">
             <h4>🔹 Etapa 1 — Upload e extração de CFOPs</h4>
             <p>Faça o upload do arquivo <code>.txt</code> e clique em
-            <b>🔍 Extrair CFOPs e Gerar Planilha</b>. O XLSX gerado contém apenas
-            os CFOPs presentes no arquivo, com tema Thomson Reuters.</p>
+            <b>🔍 Extrair CFOPs e Gerar Planilha</b>.</p>
 
             <h4>🔹 Etapa 2 — Preencher acumuladores</h4>
-            <p>Abra o XLSX baixado, preencha a coluna <b>ACUMULADOR</b> para cada
-            CFOP e salve.</p>
+            <p>Abra o XLSX baixado, preencha a coluna <b>ACUMULADOR</b> e salve.</p>
 
             <h4>🔹 Etapa 3 — Processar</h4>
-            <p>Faça o upload do XLSX preenchido e clique em <b>▶ Processar Arquivo</b>.
-            O arquivo original da Etapa 1 será reaproveitado automaticamente.</p>
+            <p>Faça o upload do XLSX preenchido e clique em
+            <b>▶ Processar Arquivo</b>.</p>
 
             <hr>
             <h4>⚠ Observações</h4>
             <ul>
                 <li>CFOPs sem acumulador preenchido receberão <b>9999</b>.</li>
                 <li>Ordenação: <b>Data Emissão → Nº NF → Nº Item</b>.</li>
-                <li>Saída em <b>ANSI (Latin-1)</b>, padrão do Domínio Sistemas.</li>
+                <li>Saída em <b>ANSI (Latin-1)</b>.</li>
             </ul>
             </div>
             """,
@@ -813,20 +955,17 @@ def main():
 
     # ── Session state ─────────────────────────────────────────────────────
     defaults = {
-        "log":              [f"Aplicação pronta. Versão: {VERSAO}"],
-        "resultado":        None,
-        "nome_saida":       "saida_dominio.txt",
-        "stats":            None,
-        "df_ordenacao":     None,
-        "xlsx_bytes":       None,
-        "xlsx_nome":        "acumuladores.xlsx",
-        "cfops_extraidos":  None,
-        "tabela_acum_ok":   False,
-        # ── cache do arquivo parseado ──────────────────────────────────
-        # Guardamos os bytes brutos para re-parsear a qualquer momento,
-        # evitando o problema do uploaded_file virar None após st.rerun()
-        "arquivo_raw":      None,
-        "arquivo_nome":     None,
+        "log":             [f"Aplicação pronta. Versão: {VERSAO}"],
+        "resultado":       None,
+        "nome_saida":      "saida_dominio.txt",
+        "stats":           None,
+        "df_ordenacao":    None,
+        "xlsx_bytes":      None,
+        "xlsx_nome":       "acumuladores.xlsx",
+        "cfops_extraidos": None,
+        "tabela_acum_ok":  False,
+        "arquivo_raw":     None,
+        "arquivo_nome":    None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -844,15 +983,13 @@ def main():
         key="upload_dominio",
     )
 
-    # ── Lê e armazena os bytes imediatamente ao fazer upload ─────────────
+    # ── Cacheia os bytes IMEDIATAMENTE ao fazer upload ────────────────────
     # Isso evita que o arquivo suma após st.rerun()
     if uploaded_file is not None:
         raw_atual = uploaded_file.read()
-        # Só atualiza o cache se for um arquivo diferente ou novo
         if raw_atual != st.session_state.arquivo_raw:
             st.session_state.arquivo_raw     = raw_atual
             st.session_state.arquivo_nome    = uploaded_file.name
-            # Limpa resultados anteriores ao trocar de arquivo
             st.session_state.cfops_extraidos = None
             st.session_state.xlsx_bytes      = None
             st.session_state.resultado       = None
@@ -864,7 +1001,6 @@ def main():
                 f"({len(raw_atual)/1024:.1f} KB)"
             ]
 
-    # Exibe nome do arquivo em cache
     if st.session_state.arquivo_raw is not None:
         st.info(
             f"📄 Arquivo em memória: **{st.session_state.arquivo_nome}** "
@@ -886,25 +1022,33 @@ def main():
                 label="⬇ Baixar Planilha de Acumuladores (.xlsx)",
                 data=st.session_state.xlsx_bytes,
                 file_name=st.session_state.xlsx_nome,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                mime=(
+                    "application/vnd.openxmlformats-"
+                    "officedocument.spreadsheetml.sheet"
+                ),
                 use_container_width=True,
                 type="primary",
             )
 
-    # ── Processamento da extração ─────────────────────────────────────────
+    # ── Extração ──────────────────────────────────────────────────────────
     if extrair:
-        st.session_state.log           = ["Extraindo CFOPs do arquivo..."]
-        st.session_state.xlsx_bytes    = None
+        st.session_state.log             = ["Extraindo CFOPs do arquivo..."]
+        st.session_state.xlsx_bytes      = None
         st.session_state.cfops_extraidos = None
 
         try:
             content    = decode_arquivo(st.session_state.arquivo_raw)
             parsed     = parse_dominio(content)
-            cfops_dict = extrair_cfops_do_arquivo(parsed)
+
+            # Diagnóstico de índices no log
+            diagnosticar_indices(parsed, st.session_state.log)
+
+            cfops_dict = extrair_cfops_do_arquivo(parsed, st.session_state.log)
 
             if not cfops_dict:
                 st.session_state.log.append(
-                    "AVISO: Nenhum CFOP encontrado nos registros 1000 e 1030."
+                    "AVISO: Nenhum CFOP válido encontrado. "
+                    "Verifique o diagnóstico de índices no log acima."
                 )
             else:
                 xlsx_bytes = gerar_xlsx_acumuladores_tr(cfops_dict)
@@ -925,7 +1069,7 @@ def main():
 
         st.rerun()
 
-    # Exibe métricas dos CFOPs extraídos
+    # Métricas dos CFOPs extraídos
     if st.session_state.cfops_extraidos:
         cfops_dict = st.session_state.cfops_extraidos
         n_ent = sum(1 for v in cfops_dict.values() if v['tipo_operacao'] == 'Entrada')
@@ -952,7 +1096,7 @@ def main():
     st.markdown("---")
 
     # ════════════════════════════════════════════════════════════════════
-    # ETAPA 2 — UPLOAD DA TABELA PREENCHIDA + PROCESSAMENTO
+    # ETAPA 2 — TABELA DE ACUMULADORES + PROCESSAMENTO
     # ════════════════════════════════════════════════════════════════════
     st.markdown("### ▶ Etapa 2 — Processar com a tabela de acumuladores preenchida")
 
@@ -963,7 +1107,6 @@ def main():
         key="upload_acum",
     )
 
-    # Feedback imediato da tabela
     if arquivo_acum is not None:
         log_temp = []
         raw_acum = arquivo_acum.read()
@@ -971,7 +1114,8 @@ def main():
         arquivo_acum.seek(0)
         if tab_prev is not None:
             st.success(
-                f"✅ Tabela válida — **{len(tab_prev)} CFOPs** com acumulador preenchido."
+                f"✅ Tabela válida — "
+                f"**{len(tab_prev)} CFOPs** com acumulador preenchido."
             )
             st.session_state.tabela_acum_ok = True
         else:
@@ -980,7 +1124,10 @@ def main():
             st.session_state.tabela_acum_ok = False
     else:
         if not st.session_state.tabela_acum_ok:
-            st.info("⬆ Faça o upload da tabela de acumuladores preenchida para processar.")
+            st.info(
+                "⬆ Faça o upload da tabela de acumuladores preenchida "
+                "para processar."
+            )
 
     pode_processar = (
         st.session_state.tabela_acum_ok and
@@ -1011,7 +1158,6 @@ def main():
         st.session_state.df_ordenacao = None
 
         try:
-            # Carrega tabela de acumuladores
             arquivo_acum.seek(0)
             tabela_acum = carregar_acumuladores(
                 arquivo_acum.read(),
@@ -1022,28 +1168,26 @@ def main():
                 st.session_state.log.append("ERRO: Tabela inválida. Abortando.")
                 st.rerun()
 
-            # Usa o arquivo em cache da Etapa 1 — sem necessidade de novo upload
             st.session_state.log.append(
                 f"Usando arquivo em memória: {st.session_state.arquivo_nome}"
             )
-            content  = decode_arquivo(st.session_state.arquivo_raw)
-            parsed   = parse_dominio(content)
+            content = decode_arquivo(st.session_state.arquivo_raw)
+            parsed  = parse_dominio(content)
 
             tipos_enc = list(parsed['por_tipo'].keys())
             st.session_state.log.append(
                 f"Tipos de registro: {', '.join(tipos_enc)}"
             )
 
-            # Gera saída
             resultado_txt, stats = gerar_saida(
                 parsed, tabela_acum, st.session_state.log
             )
 
-            # Relatório de ordenação
-            notas_ord = extrair_notas_com_itens(parsed, tabela_acum, set(), [])
-            df_ord    = gerar_relatorio_ordenacao(notas_ord)
+            notas_ord = extrair_notas_com_itens(
+                parsed, tabela_acum, set(), []
+            )
+            df_ord = gerar_relatorio_ordenacao(notas_ord)
 
-            # Codifica em ANSI
             resultado_bytes = encode_ansi_seguro(
                 resultado_txt, st.session_state.log
             )
@@ -1081,7 +1225,9 @@ def main():
 
         if st.session_state.df_ordenacao is not None:
             with st.expander("📋 Verificação de Ordenação", expanded=True):
-                st.markdown("Notas na **ordem exata** gravada no arquivo de saída.")
+                st.markdown(
+                    "Notas na **ordem exata** gravada no arquivo de saída."
+                )
                 st.dataframe(
                     st.session_state.df_ordenacao,
                     use_container_width=True,
