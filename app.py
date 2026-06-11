@@ -1,4 +1,3 @@
-import math
 import io
 import os
 import traceback
@@ -13,7 +12,9 @@ from openpyxl.utils import get_column_letter
 # ==============================
 # VERSÃO
 # ==============================
-VERSAO = "V2.3"
+VERSAO = "V2.4"
+NOME_CFOP_XLSX = "160314_Tabela_CFOP.xlsx"
+
 
 # ==============================
 # TEMA TR
@@ -67,7 +68,7 @@ def decode_arquivo(raw: bytes) -> str:
 
 
 def encode_ansi_seguro(conteudo: str, log: list) -> bytes:
-    resultado     = []
+    resultado = []
     substituicoes = 0
     for char in conteudo:
         try:
@@ -82,31 +83,29 @@ def encode_ansi_seguro(conteudo: str, log: list) -> bytes:
 
 # ==============================
 # TABELA OFICIAL DE CFOPs — RECEITA FEDERAL
-# V2.3 — busca o arquivo em múltiplos caminhos + lê flags indNFe/indComunica/indTransp/indDevol
+# V2.4 — busca em múltiplos caminhos + lê flags
 # ==============================
-NOME_CFOP_XLSX = "160314_Tabela_CFOP.xlsx"
-
-
-def _candidatos_cfop() -> list[str]:
+def _candidatos_cfop() -> list:
     """Retorna lista de caminhos candidatos para o arquivo CFOP."""
-    base = [
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), NOME_CFOP_XLSX),
+    try:
+        base_file = os.path.dirname(os.path.abspath(__file__))
+    except NameError:
+        base_file = os.getcwd()
+    return [
+        os.path.join(base_file, NOME_CFOP_XLSX),
         os.path.join(os.getcwd(), NOME_CFOP_XLSX),
         NOME_CFOP_XLSX,
     ]
-    return base
 
 
 @st.cache_data(show_spinner=False)
-def carregar_tabela_cfop_oficial() -> tuple[dict, dict]:
+def carregar_tabela_cfop_oficial() -> tuple:
     """
-    Localiza e carrega a tabela CFOP da Receita Federal.
-    Retorna:
-        tabela_descr : { '1101': 'Compra p/ industrialização...', ... }
-        tabela_flags : { '1101': {'indNFe':1,'indComunica':0,'indTransp':0,'indDevol':0}, ... }
+    Retorna (tabela_descr, tabela_flags):
+        tabela_descr : { '1102': 'Compra p/ comercialização', ... }
+        tabela_flags : { '1102': {'indNFe':1, 'indComunica':0, 'indTransp':0, 'indDevol':0}, ... }
     """
     caminho_ok = next((c for c in _candidatos_cfop() if os.path.isfile(c)), None)
-
     tabela_descr: dict = {}
     tabela_flags: dict = {}
 
@@ -115,7 +114,7 @@ def carregar_tabela_cfop_oficial() -> tuple[dict, dict]:
 
     try:
         df = pd.read_excel(caminho_ok, sheet_name="CFOP", dtype=str)
-        df.columns = [str(col).strip().upper() for col in df.columns]
+        df.columns = [str(c).strip().upper() for c in df.columns]
 
         col_cfop  = next((c for c in df.columns if c == 'CFOP'), None)
         col_descr = next((c for c in df.columns if 'DESCRI' in c or 'RESUMIDA' in c), None)
@@ -138,20 +137,15 @@ def carregar_tabela_cfop_oficial() -> tuple[dict, dict]:
 
         for _, row in df.iterrows():
             raw = str(row[col_cfop]).strip()
-            # Remove ".0" do pandas
             if '.' in raw:
                 raw = raw.split('.')[0]
-            # Mantém só dígitos
             raw = ''.join(filter(str.isdigit, raw))
             if not raw:
                 continue
-
             cfop  = raw.zfill(4)
             descr = str(row[col_descr]).strip()
-
             if cfop == '0000' or not descr or descr.lower() == 'nan':
                 continue
-
             tabela_descr[cfop] = descr
             tabela_flags[cfop] = {
                 'indNFe':      _flag(row, col_nfe),
@@ -159,7 +153,6 @@ def carregar_tabela_cfop_oficial() -> tuple[dict, dict]:
                 'indTransp':   _flag(row, col_trp),
                 'indDevol':    _flag(row, col_dev),
             }
-
     except Exception:
         return {}, {}
 
@@ -195,7 +188,7 @@ def is_devolucao(cfop: str, tabela_flags: dict) -> bool:
 # ==============================
 def parse_sped(content: str) -> dict:
     linhas_ordenadas = []
-    por_tipo         = {}
+    por_tipo = {}
     for num_linha, linha in enumerate(content.splitlines(), start=1):
         linha = linha.strip()
         if not linha:
@@ -311,11 +304,7 @@ def extrair_cfops_do_sped(parsed: dict, tabela_flags: dict, log: list) -> dict:
 # ==============================
 # GERADOR XLSX — TEMA TR
 # ==============================
-def gerar_xlsx_acumuladores_tr(
-    cfops_dict: dict,
-    tabela_descr: dict,
-    tabela_flags: dict,
-) -> bytes:
+def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_descr: dict, tabela_flags: dict) -> bytes:
     wb = Workbook()
 
     COR_LARANJA   = "FF8000"
@@ -348,6 +337,7 @@ def gerar_xlsx_acumuladores_tr(
     ws1.title = "Acumuladores"
     ws1.sheet_view.showGridLines = False
 
+    # Linha 1 — título
     ws1.merge_cells("A1:I1")
     ws1.row_dimensions[1].height = 36
     c = ws1["A1"]
@@ -356,6 +346,7 @@ def gerar_xlsx_acumuladores_tr(
     c.font      = Font(name='Segoe UI', bold=True, size=13, color=COR_LARANJA)
     c.alignment = left_al()
 
+    # Linha 2 — subtítulo
     ws1.merge_cells("A2:I2")
     ws1.row_dimensions[2].height = 20
     c2 = ws1["A2"]
@@ -367,6 +358,7 @@ def gerar_xlsx_acumuladores_tr(
     c2.font      = Font(name='Segoe UI', size=9, color=COR_BRANCO)
     c2.alignment = left_al()
 
+    # Linha 3 — aviso
     ws1.merge_cells("A3:I3")
     ws1.row_dimensions[3].height = 18
     c3 = ws1["A3"]
@@ -375,9 +367,11 @@ def gerar_xlsx_acumuladores_tr(
     c3.font      = Font(name='Segoe UI', bold=True, size=9, color=COR_CINZA_ESC)
     c3.alignment = left_al()
 
+    # Linha 4 — espaço
     ws1.row_dimensions[4].height = 6
-    ws1.row_dimensions[5].height = 22
 
+    # Linha 5 — cabeçalhos das colunas (esta é a linha que o pandas precisa ler)
+    ws1.row_dimensions[5].height = 22
     cabecalhos = [
         'CFOP', 'DESCRIÇÃO OFICIAL (Receita Federal)', 'TIPO OPERAÇÃO',
         'OCORRÊNCIAS', 'DEVOLUÇÃO', 'NFe', 'COMUNICAÇÃO', 'TRANSPORTE', 'ACUMULADOR'
@@ -392,6 +386,7 @@ def gerar_xlsx_acumuladores_tr(
         cell.alignment = center()
         cell.border    = borda_fina
 
+    # Linhas de dados — a partir da linha 6
     linha = 6
     for idx, (cfop, info) in enumerate(cfops_ord):
         ws1.row_dimensions[linha].height = 30
@@ -400,10 +395,10 @@ def gerar_xlsx_acumuladores_tr(
              else (COR_LARANJA_C if idx % 2 == 0 else COR_BRANCO)
 
         descricao = get_descricao_cfop(cfop, tabela_descr)
-        eh_devol  = '✔' if info.get('indDevol')   == 1 else ''
-        eh_nfe    = '✔' if info.get('indNFe')      == 1 else ''
-        eh_com    = '✔' if info.get('indComunica') == 1 else ''
-        eh_trp    = '✔' if info.get('indTransp')   == 1 else ''
+        eh_devol  = '✔' if info.get('indDevol')    == 1 else ''
+        eh_nfe    = '✔' if info.get('indNFe')       == 1 else ''
+        eh_com    = '✔' if info.get('indComunica')  == 1 else ''
+        eh_trp    = '✔' if info.get('indTransp')    == 1 else ''
 
         valores = [
             cfop, descricao, info['tipo_operacao'], info['ocorrencias'],
@@ -433,8 +428,8 @@ def gerar_xlsx_acumuladores_tr(
             elif ci in (5, 6, 7, 8):
                 cor_flag = "B71C1C" if (ci == 5 and valor == '✔') else (
                            "1B5E20" if valor == '✔' else COR_CINZA_ESC)
-                cell.fill      = fill(COR_VERM_CLR if ci == 5 and valor == '✔' else bg)
-                cell.font      = Font(name='Segoe UI', bold=True, size=10, color=cor_flag)
+                cell.fill  = fill(COR_VERM_CLR if ci == 5 and valor == '✔' else bg)
+                cell.font  = Font(name='Segoe UI', bold=True, size=10, color=cor_flag)
                 cell.alignment = center()
             elif ci == 9:
                 cell.fill      = fill("FFF8F0")
@@ -448,6 +443,7 @@ def gerar_xlsx_acumuladores_tr(
                 )
         linha += 1
 
+    # Rodapé
     ws1.merge_cells(f"A{linha}:I{linha}")
     ws1.row_dimensions[linha].height = 18
     cr = ws1.cell(row=linha, column=1,
@@ -603,10 +599,10 @@ def gerar_xlsx_acumuladores_tr(
         bg    = COR_CINZA_CLR if idx % 2 == 0 else COR_BRANCO
         tipo  = get_tipo_operacao(cfop)
         flags = tabela_flags.get(cfop, {})
-        f_dev = '✔' if flags.get('indDevol')   == 1 else ''
-        f_nfe = '✔' if flags.get('indNFe')      == 1 else ''
-        f_com = '✔' if flags.get('indComunica') == 1 else ''
-        f_trp = '✔' if flags.get('indTransp')   == 1 else ''
+        f_dev = '✔' if flags.get('indDevol')    == 1 else ''
+        f_nfe = '✔' if flags.get('indNFe')       == 1 else ''
+        f_com = '✔' if flags.get('indComunica')  == 1 else ''
+        f_trp = '✔' if flags.get('indTransp')    == 1 else ''
 
         for ci, valor in enumerate([cfop, tipo, descr, f_dev, f_nfe, f_com, f_trp], start=1):
             cell        = ws3.cell(row=linha3, column=ci, value=valor)
@@ -640,34 +636,83 @@ def gerar_xlsx_acumuladores_tr(
 
 # ==============================
 # CARREGAMENTO DA TABELA DE ACUMULADORES
+# V2.4 — lê o XLSX gerado pelo próprio app detectando o header correto
 # ==============================
-def carregar_acumuladores(arquivo_bytes: bytes, nome_arquivo: str, log: list) -> dict | None:
+def carregar_acumuladores(arquivo_bytes: bytes, nome_arquivo: str, log: list) -> dict:
+    """
+    Lê o XLSX/CSV de acumuladores preenchido pelo usuário.
+    O XLSX gerado pelo app tem 4 linhas de cabeçalho visual (linhas 1-4 do Excel)
+    antes da linha real de títulos das colunas (linha 5 = índice 4 para o pandas).
+    A função testa automaticamente os offsets 0-5 até encontrar CFOP + ACUMULADOR.
+    """
     try:
         ext = os.path.splitext(nome_arquivo)[1].lower()
+
         if ext in ('.xlsx', '.xls'):
-            df = pd.read_excel(io.BytesIO(arquivo_bytes), dtype=str)
+            df = None
+            for header_row in range(6):  # testa offsets 0, 1, 2, 3, 4, 5
+                try:
+                    df_tent = pd.read_excel(
+                        io.BytesIO(arquivo_bytes),
+                        sheet_name=0,        # sempre a primeira aba (Acumuladores)
+                        header=header_row,
+                        dtype=str
+                    )
+                    cols = [str(c).strip().upper() for c in df_tent.columns]
+                    if 'CFOP' in cols and 'ACUMULADOR' in cols:
+                        df_tent.columns = cols
+                        df = df_tent
+                        log.append(
+                            f"Planilha lida com sucesso (header na linha Excel {header_row + 1}). "
+                            f"Colunas: {list(df.columns)}"
+                        )
+                        break
+                except Exception:
+                    continue
+
+            if df is None:
+                log.append(
+                    "ERRO: Não foi possível localizar as colunas 'CFOP' e 'ACUMULADOR' "
+                    "na planilha. Verifique se está usando o arquivo gerado pelo conversor "
+                    "na Etapa 1, com a aba 'Acumuladores' como primeira aba."
+                )
+                return None
+
         else:
+            # CSV
             raw_str = arquivo_bytes.decode('latin-1', errors='replace')
             sep     = ';' if raw_str.count(';') >= raw_str.count(',') else ','
             df      = pd.read_csv(io.StringIO(raw_str), sep=sep, dtype=str)
+            df.columns = [str(c).strip().upper() for c in df.columns]
+            if 'CFOP' not in df.columns or 'ACUMULADOR' not in df.columns:
+                log.append("ERRO: O arquivo CSV deve conter as colunas 'CFOP' e 'ACUMULADOR'.")
+                return None
 
-        df.columns = [str(c).strip().upper() for c in df.columns]
-        if 'CFOP' not in df.columns or 'ACUMULADOR' not in df.columns:
-            log.append("ERRO: O arquivo deve conter as colunas 'CFOP' e 'ACUMULADOR'.")
-            return None
-
+        # ── Monta o dicionário CFOP → ACUMULADOR ─────────────────────────
         tabela = {}
         for _, row in df.iterrows():
+            # Normaliza CFOP
             raw_cfop = str(row['CFOP']).strip()
             if '.' in raw_cfop:
                 raw_cfop = raw_cfop.split('.')[0]
             raw_cfop = ''.join(filter(str.isdigit, raw_cfop))
-            cfop = raw_cfop.zfill(4) if raw_cfop else ''
-            acum = str(row['ACUMULADOR']).strip()
-            if not cfop or not acum:
+            if not raw_cfop:
                 continue
-            if cfop in ('0000',) or acum.upper() in ('NAN', '', '0'):
+            cfop = raw_cfop.zfill(4)
+
+            # Normaliza ACUMULADOR
+            raw_acum = str(row['ACUMULADOR']).strip()
+            # Remove ".0" que pandas adiciona
+            if raw_acum.endswith('.0'):
+                raw_acum = raw_acum[:-2]
+            acum = raw_acum.strip()
+
+            # Ignora linhas inválidas
+            if cfop == '0000':
                 continue
+            if not acum or acum.upper() in ('NAN', '', '0'):
+                continue
+
             tabela[cfop] = acum
 
         if not tabela:
@@ -678,10 +723,12 @@ def carregar_acumuladores(arquivo_bytes: bytes, nome_arquivo: str, log: list) ->
             return None
 
         log.append(f"Tabela de acumuladores carregada: {len(tabela)} CFOPs mapeados.")
+        log.append(f"Amostra: { {k: tabela[k] for k in list(tabela)[:5]} }")
         return tabela
 
     except Exception as e:
         log.append(f"ERRO ao carregar tabela de acumuladores: {e}")
+        log.append(traceback.format_exc())
         return None
 
 
@@ -711,6 +758,7 @@ def converter_sped_para_dominio(
         'devolucoes': 0, 'erros': 0,
     }
 
+    # ── 0000 ──────────────────────────────────────────────────────────────
     if '0000' in parsed['por_tipo']:
         campos, _ = parsed['por_tipo']['0000'][0]
         cnpj = _c(campos, SPED_0000_CNPJ)
@@ -719,6 +767,7 @@ def converter_sped_para_dominio(
     else:
         log.append("AVISO: Registro 0000 não encontrado no SPED.")
 
+    # ── Participantes (0150) ───────────────────────────────────────────────
     participantes = {}
     if '0150' in parsed['por_tipo']:
         for campos, _ in parsed['por_tipo']['0150']:
@@ -726,6 +775,7 @@ def converter_sped_para_dominio(
             participantes[cod] = campos
         log.append(f"Participantes carregados: {len(participantes)}")
 
+    # ── Hierarquia C100 → [C170] → [C190] ────────────────────────────────
     blocos_c    = []
     bloco_atual = None
     for tipo, campos, num_linha in parsed['linhas_ordenadas']:
@@ -736,6 +786,8 @@ def converter_sped_para_dominio(
         elif tipo == 'C170':
             if bloco_atual is not None:
                 bloco_atual['c170'].append(campos)
+            else:
+                log.append(f"AVISO: C170 linha {num_linha} sem C100 pai. Ignorado.")
         elif tipo == 'C190':
             if bloco_atual is not None:
                 bloco_atual['c190'].append(campos)
@@ -743,6 +795,7 @@ def converter_sped_para_dominio(
         blocos_c.append(bloco_atual)
     log.append(f"Blocos C100 montados: {len(blocos_c)}")
 
+    # ── C100 → 1000 + 1020 + 1030(s) ─────────────────────────────────────
     for bloco in blocos_c:
         campos_c100 = bloco['c100']
         try:
@@ -786,7 +839,6 @@ def converter_sped_para_dominio(
                 f"0|0||||{acum_principal}||0,00||||||N|S||{tipo_es}||0|||||"
                 f"||||||||||||0|{cod_sit}|0||0,00|0,00|0,00|||||||||||\n"
             )
-
             if ind_oper == '0':
                 stats['nf_entrada'] += 1
             else:
@@ -808,7 +860,6 @@ def converter_sped_para_dominio(
                 vl_bc_i   = _c(campos_c170, SPED_C170_VL_BC)
                 aliq_i    = _c(campos_c170, SPED_C170_ALIQ_ICMS)
                 vl_icms_i = _c(campos_c170, SPED_C170_VL_ICMS)
-
                 try:
                     vl_unit = f"{float(vl_item.replace(',', '.')) / float(qtd.replace(',', '.')):.3f}".replace('.', ',')
                 except Exception:
@@ -829,6 +880,7 @@ def converter_sped_para_dominio(
             log.append(f"ERRO ao converter C100 NF={_c(campos_c100, SPED_C100_NUM_DOC)}: {e}")
             stats['erros'] += 1
 
+    # ── D100 → 1000 + 1020 ────────────────────────────────────────────────
     if 'D100' in parsed['por_tipo']:
         for campos, num_linha in parsed['por_tipo']['D100']:
             try:
@@ -843,7 +895,6 @@ def converter_sped_para_dominio(
                 aliq     = _c(campos, SPED_D100_ALIQ)
                 vl_icms  = _c(campos, SPED_D100_VL_ICMS)
                 tipo_es  = 'E' if ind_oper == '0' else 'S'
-
                 part_campos = participantes.get(cod_part, [])
                 cnpj_part   = _c(part_campos, SPED_0150_CNPJ) if part_campos else ''
 
@@ -864,6 +915,7 @@ def converter_sped_para_dominio(
                 log.append(f"ERRO ao converter D100 linha {num_linha}: {e}")
                 stats['erros'] += 1
 
+    # ── H010 ──────────────────────────────────────────────────────────────
     if 'H010' in parsed['por_tipo']:
         for campos, _ in parsed['por_tipo']['H010']:
             saida.write(
@@ -925,17 +977,17 @@ def main():
         unsafe_allow_html=True,
     )
 
+    # ── Sidebar ───────────────────────────────────────────────────────────
     with st.sidebar:
         st.markdown("### ℹ Sobre")
         st.markdown(f"**Versão:** {VERSAO}")
-        st.markdown("**Thomson Reuters**")
-        st.markdown("**Domínio Sistemas**")
+        st.markdown("**Thomson Reuters  |  Domínio Sistemas**")
         st.markdown("---")
         st.markdown("### 📥 Entrada (SPED Fiscal)")
         st.markdown(
             "- **0000** Abertura\n- **0150** Participantes\n"
             "- **C100** Notas Fiscais\n- **C170** Itens de NF\n"
-            "- **C190** Analítico ICMS\n- **D100** Conhecimento de Transporte\n"
+            "- **C190** Analítico ICMS\n- **D100** Conhecimento Transporte\n"
             "- **H010** Inventário\n"
         )
         st.markdown("### 📤 Saída (Domínio Sistemas)")
@@ -946,22 +998,19 @@ def main():
         )
         st.markdown("---")
 
-        # ── Diagnóstico do arquivo CFOP ───────────────────────────────
         if tabela_cfop:
             n_dev_total = sum(1 for f in tabela_flags.values() if f.get('indDevol') == 1)
             st.success(
                 f"✅ {len(tabela_cfop)} CFOPs carregados\n"
-                f"(Receita Federal)\n"
+                f"Fonte: Receita Federal\n"
                 f"↩ {n_dev_total} CFOPs de devolução"
             )
         else:
-            caminhos_tentados = _candidatos_cfop()
+            caminhos = _candidatos_cfop()
             st.error("❌ Tabela CFOP não carregada!")
-            detalhes = "\n".join(
-                f"{'✔' if os.path.isfile(c) else '✘'} `{c}`"
-                for c in caminhos_tentados
-            )
-            st.warning(f"Caminhos verificados:\n{detalhes}")
+            for c in caminhos:
+                existe = "✔" if os.path.isfile(c) else "✘"
+                st.caption(f"{existe} `{c}`")
 
         st.markdown("---")
         st.markdown("### 📑 Fluxo")
@@ -973,6 +1022,7 @@ def main():
             "5. **Converter** e baixar saída\n"
         )
 
+    # ── Instruções ────────────────────────────────────────────────────────
     with st.expander("📖 **Instruções de Uso** — clique para expandir", expanded=False):
         st.markdown(
             """
@@ -980,11 +1030,10 @@ def main():
             <h4>🔹 Etapa 1 — Upload do SPED e extração de CFOPs</h4>
             <p>Faça o upload do arquivo <code>.txt</code> do SPED Fiscal e clique em
             <b>🔍 Extrair CFOPs e Gerar Planilha</b>. O XLSX gerado contém os CFOPs
-            com as <b>descrições oficiais da Receita Federal</b> e os indicadores
-            <b>indNFe, indComunica, indTransp e indDevol</b>.</p>
+            com as <b>descrições oficiais da Receita Federal</b>.</p>
             <h4>🔹 Etapa 2 — Preencher acumuladores</h4>
             <p>Abra o XLSX, preencha a coluna <b>ACUMULADOR</b> na aba
-            <i>Acumuladores</i> e salve.</p>
+            <i>Acumuladores</i> e salve. <b>Não altere a estrutura do arquivo.</b></p>
             <h4>🔹 Etapa 3 — Converter</h4>
             <p>Faça o upload do XLSX preenchido e clique em
             <b>▶ Converter SPED → Domínio</b>.</p>
@@ -1002,6 +1051,7 @@ def main():
 
     st.markdown("---")
 
+    # ── Session state ─────────────────────────────────────────────────────
     defaults = {
         "log":             [f"Aplicação pronta. Versão: {VERSAO} | CFOPs RF: {len(tabela_cfop)}"],
         "resultado":       None,
@@ -1018,7 +1068,9 @@ def main():
         if k not in st.session_state:
             st.session_state[k] = v
 
-    # ── Etapa 1 ───────────────────────────────────────────────────────────
+    # ════════════════════════════════════════════════════════════════════
+    # ETAPA 1
+    # ════════════════════════════════════════════════════════════════════
     st.markdown("### 🔍 Etapa 1 — Upload do SPED Fiscal e extração de CFOPs")
 
     uploaded_file = st.file_uploader(
@@ -1070,12 +1122,11 @@ def main():
         st.session_state.cfops_extraidos = None
 
         try:
-            content   = decode_arquivo(st.session_state.arquivo_raw)
-            parsed    = parse_sped(content)
+            content = decode_arquivo(st.session_state.arquivo_raw)
+            parsed  = parse_sped(content)
             st.session_state.log.append(
                 f"Registros encontrados: {', '.join(parsed['por_tipo'].keys())}"
             )
-
             cfops_dict = extrair_cfops_do_sped(parsed, tabela_flags, st.session_state.log)
 
             if not cfops_dict:
@@ -1093,9 +1144,8 @@ def main():
                 n_dev = sum(1 for v in cfops_dict.values() if v.get('indDevol') == 1)
                 st.session_state.log.append(
                     f"✔ {len(cfops_dict)} CFOP(s) extraído(s) | "
-                    f"{n_dev} de devolução | Planilha: {nome_xlsx}"
+                    f"{n_dev} devolução(ões) | Planilha: {nome_xlsx}"
                 )
-
         except Exception:
             st.session_state.log.append("ERRO FATAL na extração de CFOPs.")
             st.session_state.log.append(traceback.format_exc())
@@ -1130,13 +1180,15 @@ def main():
 
     st.markdown("---")
 
-    # ── Etapa 2 ───────────────────────────────────────────────────────────
+    # ════════════════════════════════════════════════════════════════════
+    # ETAPA 2
+    # ════════════════════════════════════════════════════════════════════
     st.markdown("### ▶ Etapa 2 — Converter com a tabela de acumuladores preenchida")
 
     arquivo_acum = st.file_uploader(
         "📂 Tabela de Acumuladores preenchida (.xlsx ou .csv)",
         type=["xlsx", "xls", "csv"],
-        help="Planilha com colunas CFOP e ACUMULADOR preenchidos",
+        help="Planilha gerada na Etapa 1 com a coluna ACUMULADOR preenchida",
         key="upload_acum",
     )
 
@@ -1196,14 +1248,12 @@ def main():
             resultado_txt, stats = converter_sped_para_dominio(
                 parsed, tabela_acum, tabela_flags, st.session_state.log
             )
-
             resultado_bytes = encode_ansi_seguro(resultado_txt, st.session_state.log)
             st.session_state.resultado  = resultado_bytes
             st.session_state.stats      = stats
             st.session_state.nome_saida = (
                 st.session_state.arquivo_nome.replace('.txt', '_dominio.txt')
             )
-
         except Exception:
             st.session_state.log.append("ERRO FATAL durante a conversão.")
             st.session_state.log.append(traceback.format_exc())
@@ -1227,7 +1277,6 @@ def main():
         col7.metric("Erros",        stats.get('erros',       0))
 
         st.markdown("---")
-
         with st.expander("👁️ Prévia do arquivo gerado (primeiras 60 linhas)"):
             preview = '\n'.join(
                 st.session_state.resultado
@@ -1244,6 +1293,7 @@ def main():
             use_container_width=True, type="primary",
         )
 
+    # ── Log ────────────────────────────────────────────────────────────────
     st.markdown("**Log de processamento**")
     log_texto = "\n".join(st.session_state.log)
     tem_erro  = any(str(l).startswith("ERRO") for l in st.session_state.log)
