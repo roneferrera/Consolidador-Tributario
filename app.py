@@ -1,3 +1,4 @@
+import math
 import io
 import os
 import traceback
@@ -12,10 +13,10 @@ from openpyxl.utils import get_column_letter
 # ==============================
 # VERSÃO
 # ==============================
-VERSAO = "V2.1"
+VERSAO = "V2.2"
 
 # ==============================
-# TEMA TR (idêntico ao RPA V3.9)
+# TEMA TR
 # ==============================
 def apply_tr_theme():
     st.markdown("""
@@ -81,23 +82,17 @@ def encode_ansi_seguro(conteudo: str, log: list) -> bytes:
 
 # ==============================
 # TABELA OFICIAL DE CFOPs — RECEITA FEDERAL
-# Carregada dinamicamente do arquivo 160314_Tabela_CFOP.xlsx
+# ✅ V2.2 — Correção: remove ".0" que o pandas adiciona ao ler inteiros como string
+# Ex: pandas lê 1102 (inteiro Excel) como "1102.0" → split('.')[0] → "1102"
 # ==============================
 @st.cache_data(show_spinner=False)
 def carregar_tabela_cfop_oficial() -> dict:
-    """
-    Lê o arquivo 160314_Tabela_CFOP.xlsx da aba 'CFOP' e retorna
-    um dicionário {cfop_str: descricao_resumida}.
-    O arquivo deve estar na mesma pasta do script.
-    Fallback: dicionário vazio (sem descrições).
-    """
     caminho = os.path.join(os.path.dirname(__file__), "160314_Tabela_CFOP.xlsx")
     try:
         df = pd.read_excel(caminho, sheet_name="CFOP", dtype=str)
         df.columns = [str(c).strip().upper() for c in df.columns]
 
-        # Detecta colunas — aceita variações de nome
-        col_cfop  = next((c for c in df.columns if 'CFOP' in c), None)
+        col_cfop  = next((c for c in df.columns if 'CFOP'   in c), None)
         col_descr = next((c for c in df.columns if 'DESCRI' in c or 'RESUMIDA' in c), None)
 
         if col_cfop is None or col_descr is None:
@@ -105,10 +100,20 @@ def carregar_tabela_cfop_oficial() -> dict:
 
         tabela = {}
         for _, row in df.iterrows():
-            cfop  = str(row[col_cfop]).strip().zfill(4)
+            raw = str(row[col_cfop]).strip()
+
+            # ✅ CORREÇÃO V2.2: remove o ".0" que o pandas adiciona
+            # ao ler colunas de inteiros do Excel com dtype=str
+            # Ex: "1102.0" → split('.')[0] → "1102"
+            if '.' in raw:
+                raw = raw.split('.')[0]
+
+            cfop  = raw.zfill(4)
             descr = str(row[col_descr]).strip()
+
             if cfop and cfop != '0000' and descr and descr.lower() != 'nan':
                 tabela[cfop] = descr
+
         return tabela
 
     except FileNotFoundError:
@@ -118,7 +123,6 @@ def carregar_tabela_cfop_oficial() -> dict:
 
 
 def get_descricao_cfop(cfop: str, tabela_cfop: dict) -> str:
-    """Retorna a descrição oficial do CFOP ou texto padrão."""
     cfop_norm = str(cfop).strip().zfill(4)
     return tabela_cfop.get(cfop_norm, '— descrição não encontrada —')
 
@@ -133,7 +137,7 @@ def get_tipo_operacao(cfop: str) -> str:
 
 
 # ==============================
-# PARSER SPED FISCAL (ENTRADA)
+# PARSER SPED FISCAL
 # ==============================
 def parse_sped(content: str) -> dict:
     linhas_ordenadas = []
@@ -157,15 +161,12 @@ def parse_sped(content: str) -> dict:
     return {'linhas_ordenadas': linhas_ordenadas, 'por_tipo': por_tipo}
 
 
-# ==============================
-# HELPER
-# ==============================
 def _c(campos: list, idx: int, default: str = '') -> str:
     return campos[idx].strip() if len(campos) > idx else default
 
 
 # ==============================
-# ÍNDICES SPED FISCAL (EFD ICMS/IPI) — LAYOUT OFICIAL
+# ÍNDICES SPED FISCAL — LAYOUT OFICIAL
 # ==============================
 SPED_0000_CNPJ      = 6
 SPED_0000_DT_INI    = 3
@@ -242,10 +243,6 @@ SPED_H010_VL_ITEM   = 5
 # EXTRAÇÃO DE CFOPs DO SPED
 # ==============================
 def extrair_cfops_do_sped(parsed: dict, log: list) -> dict:
-    """
-    Extrai todos os CFOPs únicos presentes nos registros C170 e C190.
-    Retorna dict {cfop: {registros, ocorrencias, tipo_operacao}}
-    """
     cfops = {}
 
     def registrar(cfop_raw: str, tipo_reg: str):
@@ -275,19 +272,15 @@ def extrair_cfops_do_sped(parsed: dict, log: list) -> dict:
             registrar(_c(campos, SPED_C190_CFOP), 'C190')
 
     log.append(
-        f"Registros lidos: "
-        f"C100={contadores['C100']} | C170={contadores['C170']} | "
+        f"Registros lidos: C100={contadores['C100']} | C170={contadores['C170']} | "
         f"C190={contadores['C190']} | D100={contadores['D100']}"
     )
-    log.append(
-        f"CFOPs únicos encontrados: {len(cfops)} — {sorted(cfops.keys())}"
-    )
+    log.append(f"CFOPs únicos encontrados: {len(cfops)} — {sorted(cfops.keys())}")
     return cfops
 
 
 # ==============================
-# GERADOR XLSX DE ACUMULADORES — TEMA TR
-# Com descrições oficiais da Receita Federal
+# GERADOR XLSX — TEMA TR
 # ==============================
 def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_cfop: dict) -> bytes:
     wb = Workbook()
@@ -307,22 +300,21 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_cfop: dict) -> bytes:
         bottom=Side(style='thin', color="CCCCCC"),
     )
 
-    def fill(h):       return PatternFill("solid", fgColor=h)
-    def center():      return Alignment(horizontal='center', vertical='center')
-    def left_al():     return Alignment(horizontal='left',   vertical='center')
-    def wrap_al():     return Alignment(horizontal='left',   vertical='center', wrap_text=True)
+    def fill(h):   return PatternFill("solid", fgColor=h)
+    def center():  return Alignment(horizontal='center', vertical='center')
+    def left_al(): return Alignment(horizontal='left',   vertical='center')
+    def wrap_al(): return Alignment(horizontal='left',   vertical='center', wrap_text=True)
 
     cfops_ord = sorted(
         cfops_dict.items(),
         key=lambda x: (0 if x[1]['tipo_operacao'] == 'Entrada' else 1, x[0])
     )
 
-    # ── Aba 1: Acumuladores (para preenchimento) ─────────────────────────
+    # ── Aba 1: Acumuladores ───────────────────────────────────────────────
     ws1 = wb.active
     ws1.title = "Acumuladores"
     ws1.sheet_view.showGridLines = False
 
-    # Banner
     ws1.merge_cells("A1:E1")
     ws1.row_dimensions[1].height = 36
     c = ws1["A1"]
@@ -331,20 +323,17 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_cfop: dict) -> bytes:
     c.font      = Font(name='Segoe UI', bold=True, size=13, color=COR_LARANJA)
     c.alignment = left_al()
 
-    # Subtítulo
     ws1.merge_cells("A2:E2")
     ws1.row_dimensions[2].height = 20
     c2 = ws1["A2"]
     c2.value = (
         f"Extraído do SPED Fiscal  |  {len(cfops_dict)} CFOP(s)  |  "
-        f"Descrições: Receita Federal  |  "
-        f"{datetime.now().strftime('%d/%m/%Y %H:%M')}"
+        f"Descrições: Receita Federal  |  {datetime.now().strftime('%d/%m/%Y %H:%M')}"
     )
     c2.fill      = fill(COR_LARANJA)
     c2.font      = Font(name='Segoe UI', size=9, color=COR_BRANCO)
     c2.alignment = left_al()
 
-    # Instrução
     ws1.merge_cells("A3:E3")
     ws1.row_dimensions[3].height = 18
     c3 = ws1["A3"]
@@ -356,7 +345,6 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_cfop: dict) -> bytes:
     ws1.row_dimensions[4].height = 6
     ws1.row_dimensions[5].height = 22
 
-    # Cabeçalho
     cabecalhos = ['CFOP', 'DESCRIÇÃO OFICIAL (Receita Federal)', 'TIPO OPERAÇÃO', 'OCORRÊNCIAS', 'ACUMULADOR']
     col_widths  = [10,     60,                                    16,               14,            16]
     for ci, (cab, w) in enumerate(zip(cabecalhos, col_widths), start=1):
@@ -369,7 +357,7 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_cfop: dict) -> bytes:
 
     linha = 6
     for idx, (cfop, info) in enumerate(cfops_ord):
-        ws1.row_dimensions[linha].height = 30   # altura maior para descrições longas
+        ws1.row_dimensions[linha].height = 30
         bg = (COR_CINZA_CLR if idx % 2 == 0 else COR_BRANCO) \
              if info['tipo_operacao'] == 'Entrada' \
              else (COR_LARANJA_C if idx % 2 == 0 else COR_BRANCO)
@@ -398,7 +386,6 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_cfop: dict) -> bytes:
                 cell.font      = Font(name='Segoe UI', size=10, color=COR_CINZA_ESC)
                 cell.alignment = center()
             elif ci == 5:
-                # Coluna ACUMULADOR — destaque laranja
                 cell.fill      = fill("FFF8F0")
                 cell.font      = Font(name='Segoe UI', bold=True, size=10, color=COR_LARANJA)
                 cell.alignment = center()
@@ -410,7 +397,6 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_cfop: dict) -> bytes:
                 )
         linha += 1
 
-    # Rodapé
     ws1.merge_cells(f"A{linha}:E{linha}")
     ws1.row_dimensions[linha].height = 18
     cr = ws1.cell(row=linha, column=1,
@@ -422,7 +408,7 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_cfop: dict) -> bytes:
     ws1.freeze_panes    = "A6"
     ws1.auto_filter.ref = f"A5:E{linha - 1}"
 
-    # ── Aba 2: CFOPs Encontrados (relatório) ─────────────────────────────
+    # ── Aba 2: CFOPs Encontrados ──────────────────────────────────────────
     ws2 = wb.create_sheet(title="CFOPs Encontrados")
     ws2.sheet_view.showGridLines = False
 
@@ -511,7 +497,7 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_cfop: dict) -> bytes:
     ws2.freeze_panes    = "A5"
     ws2.auto_filter.ref = f"A4:F{linha2 - 1}"
 
-    # ── Aba 3: Tabela Completa CFOP (referência) ─────────────────────────
+    # ── Aba 3: Tabela Completa CFOP ───────────────────────────────────────
     ws3 = wb.create_sheet(title="Tabela CFOP Receita Federal")
     ws3.sheet_view.showGridLines = False
 
@@ -592,13 +578,15 @@ def carregar_acumuladores(arquivo_bytes: bytes, nome_arquivo: str, log: list) ->
 
         tabela = {}
         for _, row in df.iterrows():
-            cfop = str(row['CFOP']).strip().zfill(4)
+            raw_cfop = str(row['CFOP']).strip()
+            # ✅ mesma correção aplicada à tabela RF
+            if '.' in raw_cfop:
+                raw_cfop = raw_cfop.split('.')[0]
+            cfop = raw_cfop.zfill(4)
             acum = str(row['ACUMULADOR']).strip()
             if not cfop or not acum:
                 continue
-            if cfop.upper() == 'NAN' or acum.upper() == 'NAN':
-                continue
-            if acum in ('', '0', 'nan', 'NAN', 'None'):
+            if cfop.upper() in ('NAN', '0000') or acum.upper() in ('NAN', '', '0'):
                 continue
             tabela[cfop] = acum
 
@@ -628,8 +616,7 @@ def get_acumulador(cfop: str, tabela: dict, nao_mapeados: set) -> str:
 
 # ==============================
 # CONVERSÃO SPED FISCAL → DOMÍNIO SISTEMAS
-# ENTRADA : C100 + C170 + C190 + D100 + H010
-# SAÍDA   : 0000 + 1000 + 1020 + 1030 + 9999
+# Baseado no leiaute: exemplo_arquivo__nota_entrada.txt
 # ==============================
 def converter_sped_para_dominio(parsed: dict, tabela_acum: dict, log: list) -> tuple:
     saida        = StringIO()
@@ -653,7 +640,7 @@ def converter_sped_para_dominio(parsed: dict, tabela_acum: dict, log: list) -> t
     else:
         log.append("AVISO: Registro 0000 não encontrado no SPED.")
 
-    # ── Lookup de participantes (0150) ────────────────────────────────────
+    # ── Lookup participantes (0150) ────────────────────────────────────────
     participantes = {}
     if '0150' in parsed['por_tipo']:
         for campos, _ in parsed['por_tipo']['0150']:
@@ -661,7 +648,7 @@ def converter_sped_para_dominio(parsed: dict, tabela_acum: dict, log: list) -> t
             participantes[cod] = campos
         log.append(f"Participantes carregados: {len(participantes)}")
 
-    # ── Monta hierarquia C100 → [C170] → [C190] ───────────────────────────
+    # ── Hierarquia C100 → [C170] → [C190] ────────────────────────────────
     blocos_c    = []
     bloco_atual = None
 
@@ -686,7 +673,11 @@ def converter_sped_para_dominio(parsed: dict, tabela_acum: dict, log: list) -> t
 
     log.append(f"Blocos C100 montados: {len(blocos_c)}")
 
-    # ── Converte C100 → 1000 + 1020 + 1030(s) ────────────────────────────
+    # ── C100 → 1000 + 1020 + 1030(s) ─────────────────────────────────────
+    # Leiaute baseado em: exemplo_arquivo__nota_entrada.txt
+    # |1000|NUM_DOC|CNPJ_PART||IND_OPER|CFOP|SERIE|COD_MOD|COD_SIT|CHV_NFE|||DT_DOC|DT_ES|VL_DOC||OBS|C||||||||E/S|...
+    # |1020|NUM_DOC||VL_DOC|ALIQ_ICMS|VL_ICMS|0,00|0,00|0,00|0,00|VL_DOC||||
+    # |1030|NUM_ITEM|QTD|VL_UNIT|0|0|1|DT_DOC||COD_SIT|VL_ITEM|VL_DESC|VL_ITEM|0,00|ALIQ|...|VL_ICMS|...|CFOP|...|VL_BC|...
     for bloco in blocos_c:
         campos_c100 = bloco['c100']
         try:
@@ -700,17 +691,11 @@ def converter_sped_para_dominio(parsed: dict, tabela_acum: dict, log: list) -> t
             dt_doc     = _c(campos_c100, SPED_C100_DT_DOC)
             dt_es      = _c(campos_c100, SPED_C100_DT_ES)
             vl_doc     = _c(campos_c100, SPED_C100_VL_DOC)
-            vl_bc_icms = _c(campos_c100, SPED_C100_VL_BC_ICMS)
             vl_icms    = _c(campos_c100, SPED_C100_VL_ICMS)
-            vl_ipi     = _c(campos_c100, SPED_C100_VL_IPI)
-            vl_pis     = _c(campos_c100, SPED_C100_VL_PIS)
-            vl_cofins  = _c(campos_c100, SPED_C100_VL_COFINS)
 
-            # CNPJ do participante via lookup 0150
             part_campos = participantes.get(cod_part, [])
             cnpj_part   = _c(part_campos, SPED_0150_CNPJ) if part_campos else ''
 
-            # Tipo E/S: 0=Entrada, 1=Saída
             tipo_es = 'E' if ind_oper == '0' else 'S'
 
             # CFOP principal — primeiro C170, depois C190
@@ -722,8 +707,12 @@ def converter_sped_para_dominio(parsed: dict, tabela_acum: dict, log: list) -> t
 
             acum_principal = get_acumulador(cfop_principal, tabela_acum, nao_mapeados)
 
-            # ── Registro 1000 (cabeçalho NF no Domínio) ──────────────────
-            # Baseado no leiaute do arquivo exemplo_arquivo__nota_entrada.txt
+            # Alíquota ICMS da NF (do C190)
+            aliq_icms_nf = '0,00'
+            if bloco['c190']:
+                aliq_icms_nf = _c(bloco['c190'][0], SPED_C190_ALIQ) or '0,00'
+
+            # ── Registro 1000 ─────────────────────────────────────────────
             saida.write(
                 f"|1000|{num_doc}|{cnpj_part}||{ind_oper}|{cfop_principal}|"
                 f"{serie}|{cod_mod}|{cod_sit}|{chv_nfe}|||"
@@ -738,44 +727,38 @@ def converter_sped_para_dominio(parsed: dict, tabela_acum: dict, log: list) -> t
             else:
                 stats['nf_saida'] += 1
 
-            # ── Registro 1020 (totais da NF no Domínio) ──────────────────
-            # |1020|NUM_NF||VL_TOTAL|ALIQ_ICMS|VL_ICMS|...|
-            aliq_icms_nf = '0,00'
-            if bloco['c190']:
-                aliq_icms_nf = _c(bloco['c190'][0], SPED_C190_ALIQ) or '0,00'
-
+            # ── Registro 1020 ─────────────────────────────────────────────
             saida.write(
                 f"|1020|{num_doc}||{vl_doc}|{aliq_icms_nf}|{vl_icms}|"
                 f"0,00|0,00|0,00|0,00|{vl_doc}||||\n"
             )
             stats['analiticos'] += 1
 
-            # ── Registros 1030 (itens da NF no Domínio) ──────────────────
+            # ── Registros 1030 (itens) ────────────────────────────────────
             for campos_c170 in bloco['c170']:
                 num_item  = _c(campos_c170, SPED_C170_NUM_ITEM)
                 qtd       = _c(campos_c170, SPED_C170_QTD)
+                unid      = _c(campos_c170, SPED_C170_UNID)
                 vl_item   = _c(campos_c170, SPED_C170_VL_ITEM)
                 vl_desc_i = _c(campos_c170, SPED_C170_VL_DESC)
                 cfop_item = _c(campos_c170, SPED_C170_CFOP)
                 vl_bc_i   = _c(campos_c170, SPED_C170_VL_BC)
                 aliq_i    = _c(campos_c170, SPED_C170_ALIQ_ICMS)
                 vl_icms_i = _c(campos_c170, SPED_C170_VL_ICMS)
-                acum_item = get_acumulador(cfop_item, tabela_acum, nao_mapeados)
 
-                # Calcula VL_UNIT = VL_ITEM / QTD
+                # VL_UNIT = VL_ITEM / QTD
                 try:
                     vl_unit = f"{float(vl_item.replace(',', '.')) / float(qtd.replace(',', '.')):.3f}".replace('.', ',')
                 except Exception:
                     vl_unit = vl_item
 
-                # Baseado no leiaute do arquivo exemplo_arquivo__nota_entrada.txt
                 saida.write(
                     f"|1030|{num_item}|{qtd}|{vl_unit}|0|0|1|{dt_doc}||"
                     f"{cod_sit}|{vl_item}|{vl_desc_i}|{vl_item}|0,00|"
                     f"{aliq_i}|||0,00|0,00|0,00|0,000|{vl_icms_i}|0,00|"
                     f"0,00|0,00||{vl_item}|0,00|02|0,00|0,00|0,00|0,00|"
                     f"{cfop_item}||0,0000|0,00|0,00|0,00|{vl_bc_i}|70|"
-                    f"0,00|70|0,00|||||{dt_doc}|{dt_doc}||||||S|UN|||"
+                    f"0,00|70|0,00|||||{dt_doc}|{dt_doc}||||||S|{unid}|||"
                     f"{vl_item}|||||||1|||||01|01||||||||\n"
                 )
                 stats['itens'] += 1
@@ -823,7 +806,7 @@ def converter_sped_para_dominio(parsed: dict, tabela_acum: dict, log: list) -> t
                 log.append(f"ERRO ao converter D100 linha {num_linha}: {e}")
                 stats['erros'] += 1
 
-    # ── H010 → passthrough (inventário) ───────────────────────────────────
+    # ── H010 → inventário (passthrough) ───────────────────────────────────
     if 'H010' in parsed['por_tipo']:
         for campos, _ in parsed['por_tipo']['H010']:
             saida.write(
@@ -840,7 +823,7 @@ def converter_sped_para_dominio(parsed: dict, tabela_acum: dict, log: list) -> t
 
     if nao_mapeados:
         log.append(
-            f"AVISO: {len(nao_mapeados)} CFOP(s) sem acumulador (9999): "
+            f"AVISO: {len(nao_mapeados)} CFOP(s) sem acumulador (receberam 9999): "
             f"{', '.join(sorted(nao_mapeados))}"
         )
 
@@ -866,7 +849,6 @@ def main():
     )
     apply_tr_theme()
 
-    # Carrega tabela CFOP oficial (cache)
     tabela_cfop = carregar_tabela_cfop_oficial()
 
     st.markdown(
@@ -879,15 +861,14 @@ def main():
             <p style="color:#DDDDDD; margin:6px 0 0 0; font-family:'Segoe UI',Arial,sans-serif;">
                 Entrada: <strong>SPED Fiscal EFD ICMS/IPI</strong> &nbsp;→&nbsp;
                 Saída: <strong>Leiaute padrão Domínio Sistemas</strong>
-                &nbsp;|&nbsp; Descrições: <strong>Receita Federal
-                ({len(tabela_cfop)} CFOPs)</strong>
+                &nbsp;|&nbsp; Descrições: <strong>Receita Federal ({len(tabela_cfop)} CFOPs)</strong>
             </p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    # ── Sidebar ──────────────────────────────────────────────────────────
+    # ── Sidebar ───────────────────────────────────────────────────────────
     with st.sidebar:
         st.markdown("### ℹ Sobre")
         st.markdown(f"**Versão:** {VERSAO}")
@@ -913,7 +894,6 @@ def main():
             "- **9999** Encerramento\n"
         )
         st.markdown("---")
-        st.markdown("### 📋 CFOPs")
         if tabela_cfop:
             st.success(f"✅ {len(tabela_cfop)} CFOPs carregados\n(Receita Federal)")
         else:
@@ -930,21 +910,16 @@ def main():
             "4. Upload do XLSX preenchido\n"
             "5. **Converter** e baixar saída\n"
         )
-        st.markdown("---")
-        st.markdown("### ⚙ Encoding de saída")
-        st.markdown("**ANSI (Latin-1)**")
 
     # ── Instruções ────────────────────────────────────────────────────────
     with st.expander("📖 **Instruções de Uso** — clique para expandir", expanded=False):
         st.markdown(
             """
             <div class="instrucoes-box">
-            <h4>🔹 Etapa 1 — Upload do SPED Fiscal e extração de CFOPs</h4>
-            <p>Faça o upload do arquivo <code>.txt</code> do SPED Fiscal (EFD ICMS/IPI)
-            e clique em <b>🔍 Extrair CFOPs e Gerar Planilha</b>. O XLSX gerado contém
-            os CFOPs presentes no arquivo com as <b>descrições oficiais da Receita Federal</b>
-            e três abas: <i>Acumuladores</i>, <i>CFOPs Encontrados</i> e
-            <i>Tabela CFOP Receita Federal</i>.</p>
+            <h4>🔹 Etapa 1 — Upload do SPED e extração de CFOPs</h4>
+            <p>Faça o upload do arquivo <code>.txt</code> do SPED Fiscal e clique em
+            <b>🔍 Extrair CFOPs e Gerar Planilha</b>. O XLSX gerado contém os CFOPs
+            presentes no arquivo com as <b>descrições oficiais da Receita Federal</b>.</p>
 
             <h4>🔹 Etapa 2 — Preencher acumuladores</h4>
             <p>Abra o XLSX, preencha a coluna <b>ACUMULADOR</b> na aba
@@ -961,8 +936,7 @@ def main():
                 <li>Saída: leiaute Domínio Sistemas (1000/1020/1030).</li>
                 <li>CFOPs sem acumulador preenchido receberão <b>9999</b>.</li>
                 <li>Saída em <b>ANSI (Latin-1)</b>.</li>
-                <li>Descrições dos CFOPs: fonte oficial <b>Receita Federal</b>
-                    (<code>160314_Tabela_CFOP.xlsx</code>).</li>
+                <li>Descrições: fonte oficial <b>Receita Federal</b>.</li>
             </ul>
             </div>
             """,
@@ -1000,7 +974,6 @@ def main():
         key="upload_sped",
     )
 
-    # Cacheia bytes imediatamente para evitar perda após st.rerun()
     if uploaded_file is not None:
         raw_atual = uploaded_file.read()
         if raw_atual != st.session_state.arquivo_raw:
@@ -1049,15 +1022,14 @@ def main():
         try:
             content    = decode_arquivo(st.session_state.arquivo_raw)
             parsed     = parse_sped(content)
-
-            tipos_enc = list(parsed['por_tipo'].keys())
+            tipos_enc  = list(parsed['por_tipo'].keys())
             st.session_state.log.append(f"Registros encontrados: {', '.join(tipos_enc)}")
 
             cfops_dict = extrair_cfops_do_sped(parsed, st.session_state.log)
 
             if not cfops_dict:
                 st.session_state.log.append(
-                    "AVISO: Nenhum CFOP encontrado nos registros C170/C190. "
+                    "AVISO: Nenhum CFOP encontrado. "
                     "Verifique se o arquivo é um SPED Fiscal EFD ICMS/IPI válido."
                 )
             else:
@@ -1092,11 +1064,11 @@ def main():
         with st.expander("📋 CFOPs identificados no SPED", expanded=False):
             rows = [
                 {
-                    'CFOP':        cfop,
+                    'CFOP':           cfop,
                     'Descrição (RF)': get_descricao_cfop(cfop, tabela_cfop),
-                    'Tipo':        info['tipo_operacao'],
-                    'Ocorrências': info['ocorrencias'],
-                    'Registros':   ', '.join(sorted(info['registros'])),
+                    'Tipo':           info['tipo_operacao'],
+                    'Ocorrências':    info['ocorrencias'],
+                    'Registros':      ', '.join(sorted(info['registros'])),
                 }
                 for cfop, info in sorted(cfops_dict.items())
             ]
@@ -1123,8 +1095,7 @@ def main():
         arquivo_acum.seek(0)
         if tab_prev is not None:
             st.success(
-                f"✅ Tabela válida — "
-                f"**{len(tab_prev)} CFOPs** com acumulador preenchido."
+                f"✅ Tabela válida — **{len(tab_prev)} CFOPs** com acumulador preenchido."
             )
             st.session_state.tabela_acum_ok = True
         else:
@@ -1173,9 +1144,6 @@ def main():
                 st.session_state.log.append("ERRO: Tabela inválida. Abortando.")
                 st.rerun()
 
-            st.session_state.log.append(
-                f"Arquivo em memória: {st.session_state.arquivo_nome}"
-            )
             content = decode_arquivo(st.session_state.arquivo_raw)
             parsed  = parse_sped(content)
 
@@ -1183,9 +1151,7 @@ def main():
                 parsed, tabela_acum, st.session_state.log
             )
 
-            resultado_bytes = encode_ansi_seguro(
-                resultado_txt, st.session_state.log
-            )
+            resultado_bytes = encode_ansi_seguro(resultado_txt, st.session_state.log)
 
             st.session_state.resultado  = resultado_bytes
             st.session_state.stats      = stats
