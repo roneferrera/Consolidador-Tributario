@@ -82,67 +82,86 @@ def encode_ansi_seguro(conteudo: str, log: list) -> bytes:
 
 # ==============================
 # TABELA OFICIAL DE CFOPs — RECEITA FEDERAL
-# Lê: CFOP, Descrição Resumida, indNFe, indComunica, indTransp, indDevol
+# V2.3 — busca o arquivo em múltiplos caminhos + lê flags indNFe/indComunica/indTransp/indDevol
 # ==============================
+NOME_CFOP_XLSX = "160314_Tabela_CFOP.xlsx"
+
+
+def _candidatos_cfop() -> list[str]:
+    """Retorna lista de caminhos candidatos para o arquivo CFOP."""
+    base = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), NOME_CFOP_XLSX),
+        os.path.join(os.getcwd(), NOME_CFOP_XLSX),
+        NOME_CFOP_XLSX,
+    ]
+    return base
+
+
 @st.cache_data(show_spinner=False)
 def carregar_tabela_cfop_oficial() -> tuple[dict, dict]:
     """
+    Localiza e carrega a tabela CFOP da Receita Federal.
     Retorna:
-        tabela_descr : dict  { '1101': 'Compra p/ industrialização...', ... }
-        tabela_flags : dict  { '1101': {'indNFe':1,'indComunica':0,'indTransp':0,'indDevol':0}, ... }
+        tabela_descr : { '1101': 'Compra p/ industrialização...', ... }
+        tabela_flags : { '1101': {'indNFe':1,'indComunica':0,'indTransp':0,'indDevol':0}, ... }
     """
-    caminho = os.path.join(os.path.dirname(__file__), "160314_Tabela_CFOP.xlsx")
+    caminho_ok = next((c for c in _candidatos_cfop() if os.path.isfile(c)), None)
+
     tabela_descr: dict = {}
     tabela_flags: dict = {}
 
-    try:
-        df = pd.read_excel(caminho, sheet_name="CFOP", dtype=str)
-        df.columns = [str(c).strip().upper() for c in df.columns]
+    if caminho_ok is None:
+        return tabela_descr, tabela_flags
 
-        # ── Localiza colunas dinamicamente ────────────────────────────────
+    try:
+        df = pd.read_excel(caminho_ok, sheet_name="CFOP", dtype=str)
+        df.columns = [str(col).strip().upper() for col in df.columns]
+
         col_cfop  = next((c for c in df.columns if c == 'CFOP'), None)
         col_descr = next((c for c in df.columns if 'DESCRI' in c or 'RESUMIDA' in c), None)
-        col_nfe   = next((c for c in df.columns if 'INDNFE'    in c.replace(' ', '').upper()), None)
+        col_nfe   = next((c for c in df.columns if 'INDNFE'      in c.replace(' ', '').upper()), None)
         col_com   = next((c for c in df.columns if 'INDCOMUNICA' in c.replace(' ', '').upper()), None)
-        col_trp   = next((c for c in df.columns if 'INDTRANSP'  in c.replace(' ', '').upper()), None)
-        col_dev   = next((c for c in df.columns if 'INDDEVOL'   in c.replace(' ', '').upper()), None)
+        col_trp   = next((c for c in df.columns if 'INDTRANSP'   in c.replace(' ', '').upper()), None)
+        col_dev   = next((c for c in df.columns if 'INDDEVOL'    in c.replace(' ', '').upper()), None)
 
         if col_cfop is None or col_descr is None:
-            return {}, {}
+            return tabela_descr, tabela_flags
+
+        def _flag(row, col):
+            if col is None:
+                return 0
+            v = str(row[col]).strip().split('.')[0]
+            try:
+                return int(v)
+            except ValueError:
+                return 0
 
         for _, row in df.iterrows():
             raw = str(row[col_cfop]).strip()
-            # Remove ".0" que pandas adiciona ao ler inteiros com dtype=str
+            # Remove ".0" do pandas
             if '.' in raw:
                 raw = raw.split('.')[0]
+            # Mantém só dígitos
+            raw = ''.join(filter(str.isdigit, raw))
+            if not raw:
+                continue
+
             cfop  = raw.zfill(4)
             descr = str(row[col_descr]).strip()
 
-            if not cfop or cfop == '0000' or not descr or descr.lower() == 'nan':
+            if cfop == '0000' or not descr or descr.lower() == 'nan':
                 continue
 
             tabela_descr[cfop] = descr
-
-            def _flag(col):
-                if col is None:
-                    return 0
-                v = str(row[col]).strip().split('.')[0]
-                try:
-                    return int(v)
-                except ValueError:
-                    return 0
-
             tabela_flags[cfop] = {
-                'indNFe':     _flag(col_nfe),
-                'indComunica':_flag(col_com),
-                'indTransp':  _flag(col_trp),
-                'indDevol':   _flag(col_dev),
+                'indNFe':      _flag(row, col_nfe),
+                'indComunica': _flag(row, col_com),
+                'indTransp':   _flag(row, col_trp),
+                'indDevol':    _flag(row, col_dev),
             }
 
-    except FileNotFoundError:
-        pass
     except Exception:
-        pass
+        return {}, {}
 
     return tabela_descr, tabela_flags
 
@@ -168,18 +187,7 @@ def get_tipo_operacao(cfop: str) -> str:
 
 
 def is_devolucao(cfop: str, tabela_flags: dict) -> bool:
-    """Retorna True se o CFOP for de devolução (indDevol=1)."""
     return get_flags_cfop(cfop, tabela_flags).get('indDevol', 0) == 1
-
-
-def is_comunicacao(cfop: str, tabela_flags: dict) -> bool:
-    """Retorna True se o CFOP for de comunicação (indComunica=1)."""
-    return get_flags_cfop(cfop, tabela_flags).get('indComunica', 0) == 1
-
-
-def is_transporte(cfop: str, tabela_flags: dict) -> bool:
-    """Retorna True se o CFOP for de transporte (indTransp=1)."""
-    return get_flags_cfop(cfop, tabela_flags).get('indTransp', 0) == 1
 
 
 # ==============================
@@ -212,24 +220,11 @@ def _c(campos: list, idx: int, default: str = '') -> str:
 
 
 # ==============================
-# ÍNDICES SPED FISCAL — LAYOUT OFICIAL
+# ÍNDICES SPED FISCAL
 # ==============================
 SPED_0000_CNPJ      = 6
-SPED_0000_DT_INI    = 3
-SPED_0000_DT_FIN    = 4
-SPED_0000_NOME      = 5
-SPED_0000_UF        = 8
-
 SPED_0150_COD       = 1
-SPED_0150_NOME      = 2
 SPED_0150_CNPJ      = 4
-SPED_0150_CPF       = 5
-SPED_0150_IE        = 6
-SPED_0150_END       = 9
-SPED_0150_NUM       = 10
-SPED_0150_COMPL     = 11
-SPED_0150_BAIRRO    = 12
-
 SPED_C100_IND_OPER  = 1
 SPED_C100_COD_PART  = 3
 SPED_C100_COD_MOD   = 4
@@ -240,15 +235,8 @@ SPED_C100_CHV_NFE   = 8
 SPED_C100_DT_DOC    = 9
 SPED_C100_DT_ES     = 10
 SPED_C100_VL_DOC    = 11
-SPED_C100_VL_BC_ICMS= 20
 SPED_C100_VL_ICMS   = 21
-SPED_C100_VL_IPI    = 24
-SPED_C100_VL_PIS    = 25
-SPED_C100_VL_COFINS = 26
-
 SPED_C170_NUM_ITEM  = 1
-SPED_C170_COD_ITEM  = 2
-SPED_C170_DESCR     = 3
 SPED_C170_QTD       = 4
 SPED_C170_UNID      = 5
 SPED_C170_VL_ITEM   = 6
@@ -257,15 +245,8 @@ SPED_C170_CFOP      = 10
 SPED_C170_VL_BC     = 12
 SPED_C170_ALIQ_ICMS = 13
 SPED_C170_VL_ICMS   = 14
-
-SPED_C190_CST_ICMS  = 1
 SPED_C190_CFOP      = 2
 SPED_C190_ALIQ      = 3
-SPED_C190_VL_OPR    = 4
-SPED_C190_VL_BC     = 5
-SPED_C190_VL_ICMS   = 6
-SPED_C190_VL_RED    = 9
-
 SPED_D100_IND_OPER  = 1
 SPED_D100_COD_PART  = 3
 SPED_D100_COD_MOD   = 4
@@ -274,10 +255,8 @@ SPED_D100_SER       = 6
 SPED_D100_NUM_DOC   = 8
 SPED_D100_DT_DOC    = 10
 SPED_D100_VL_DOC    = 14
-SPED_D100_VL_BC     = 18
 SPED_D100_ALIQ      = 19
 SPED_D100_VL_ICMS   = 20
-
 SPED_H010_COD_ITEM  = 1
 SPED_H010_UNID      = 2
 SPED_H010_QTD       = 3
@@ -313,7 +292,6 @@ def extrair_cfops_do_sped(parsed: dict, tabela_flags: dict, log: list) -> dict:
         cfops[cfop]['ocorrencias'] += 1
 
     contadores = {'C100': 0, 'C170': 0, 'C190': 0, 'D100': 0}
-
     for tipo, campos, _ in parsed['linhas_ordenadas']:
         if tipo in contadores:
             contadores[tipo] += 1
@@ -422,10 +400,10 @@ def gerar_xlsx_acumuladores_tr(
              else (COR_LARANJA_C if idx % 2 == 0 else COR_BRANCO)
 
         descricao = get_descricao_cfop(cfop, tabela_descr)
-        eh_devol  = '✔' if info.get('indDevol')    == 1 else ''
-        eh_nfe    = '✔' if info.get('indNFe')       == 1 else ''
-        eh_com    = '✔' if info.get('indComunica')  == 1 else ''
-        eh_trp    = '✔' if info.get('indTransp')    == 1 else ''
+        eh_devol  = '✔' if info.get('indDevol')   == 1 else ''
+        eh_nfe    = '✔' if info.get('indNFe')      == 1 else ''
+        eh_com    = '✔' if info.get('indComunica') == 1 else ''
+        eh_trp    = '✔' if info.get('indTransp')   == 1 else ''
 
         valores = [
             cfop, descricao, info['tipo_operacao'], info['ocorrencias'],
@@ -453,8 +431,7 @@ def gerar_xlsx_acumuladores_tr(
                 cell.font      = Font(name='Segoe UI', size=10, color=COR_CINZA_ESC)
                 cell.alignment = center()
             elif ci in (5, 6, 7, 8):
-                # Flags: Devolução, NFe, Comunicação, Transporte
-                cor_flag = "B71C1C" if ci == 5 and valor == '✔' else (
+                cor_flag = "B71C1C" if (ci == 5 and valor == '✔') else (
                            "1B5E20" if valor == '✔' else COR_CINZA_ESC)
                 cell.fill      = fill(COR_VERM_CLR if ci == 5 and valor == '✔' else bg)
                 cell.font      = Font(name='Segoe UI', bold=True, size=10, color=cor_flag)
@@ -486,9 +463,9 @@ def gerar_xlsx_acumuladores_tr(
     ws2 = wb.create_sheet(title="CFOPs Encontrados")
     ws2.sheet_view.showGridLines = False
 
-    n_ent  = sum(1 for v in cfops_dict.values() if v['tipo_operacao'] == 'Entrada')
-    n_sai  = sum(1 for v in cfops_dict.values() if v['tipo_operacao'] == 'Saída')
-    n_dev  = sum(1 for v in cfops_dict.values() if v.get('indDevol') == 1)
+    n_ent = sum(1 for v in cfops_dict.values() if v['tipo_operacao'] == 'Entrada')
+    n_sai = sum(1 for v in cfops_dict.values() if v['tipo_operacao'] == 'Saída')
+    n_dev = sum(1 for v in cfops_dict.values() if v.get('indDevol') == 1)
 
     ws2.merge_cells("A1:H1")
     ws2.row_dimensions[1].height = 36
@@ -535,7 +512,6 @@ def gerar_xlsx_acumuladores_tr(
         bg_st   = COR_VERDE_CLR if mapeado else COR_VERM_CLR
         regs    = ', '.join(sorted(info['registros']))
         eh_dev  = '✔ Devolução' if info.get('indDevol') == 1 else '—'
-        # status RF baseado em indNFe
         status_rf = 'NFe' if info.get('indNFe') == 1 else (
                     'CT-e' if info.get('indTransp') == 1 else (
                     'Comunic.' if info.get('indComunica') == 1 else '—'))
@@ -602,7 +578,7 @@ def gerar_xlsx_acumuladores_tr(
     ws3.merge_cells("A2:G2")
     ws3.row_dimensions[2].height = 20
     c2 = ws3["A2"]
-    c2.value     = f"Total: {len(tabela_descr)} CFOPs  |  Fonte: 160314_Tabela_CFOP.xlsx — Receita Federal"
+    c2.value     = f"Total: {len(tabela_descr)} CFOPs  |  Fonte: {NOME_CFOP_XLSX} — Receita Federal"
     c2.fill      = fill(COR_LARANJA)
     c2.font      = Font(name='Segoe UI', size=9, color=COR_BRANCO)
     c2.alignment = left_al()
@@ -627,10 +603,10 @@ def gerar_xlsx_acumuladores_tr(
         bg    = COR_CINZA_CLR if idx % 2 == 0 else COR_BRANCO
         tipo  = get_tipo_operacao(cfop)
         flags = tabela_flags.get(cfop, {})
-        f_dev = '✔' if flags.get('indDevol')    == 1 else ''
-        f_nfe = '✔' if flags.get('indNFe')       == 1 else ''
-        f_com = '✔' if flags.get('indComunica')  == 1 else ''
-        f_trp = '✔' if flags.get('indTransp')    == 1 else ''
+        f_dev = '✔' if flags.get('indDevol')   == 1 else ''
+        f_nfe = '✔' if flags.get('indNFe')      == 1 else ''
+        f_com = '✔' if flags.get('indComunica') == 1 else ''
+        f_trp = '✔' if flags.get('indTransp')   == 1 else ''
 
         for ci, valor in enumerate([cfop, tipo, descr, f_dev, f_nfe, f_com, f_trp], start=1):
             cell        = ws3.cell(row=linha3, column=ci, value=valor)
@@ -663,7 +639,7 @@ def gerar_xlsx_acumuladores_tr(
 
 
 # ==============================
-# CARREGAMENTO DA TABELA DE ACUMULADORES (upload do usuário)
+# CARREGAMENTO DA TABELA DE ACUMULADORES
 # ==============================
 def carregar_acumuladores(arquivo_bytes: bytes, nome_arquivo: str, log: list) -> dict | None:
     try:
@@ -685,11 +661,12 @@ def carregar_acumuladores(arquivo_bytes: bytes, nome_arquivo: str, log: list) ->
             raw_cfop = str(row['CFOP']).strip()
             if '.' in raw_cfop:
                 raw_cfop = raw_cfop.split('.')[0]
-            cfop = raw_cfop.zfill(4)
+            raw_cfop = ''.join(filter(str.isdigit, raw_cfop))
+            cfop = raw_cfop.zfill(4) if raw_cfop else ''
             acum = str(row['ACUMULADOR']).strip()
             if not cfop or not acum:
                 continue
-            if cfop.upper() in ('NAN', '0000') or acum.upper() in ('NAN', '', '0'):
+            if cfop in ('0000',) or acum.upper() in ('NAN', '', '0'):
                 continue
             tabela[cfop] = acum
 
@@ -729,17 +706,11 @@ def converter_sped_para_dominio(
     saida        = StringIO()
     nao_mapeados = set()
     stats = {
-        'nf_entrada':  0,
-        'nf_saida':    0,
-        'itens':       0,
-        'analiticos':  0,
-        'transporte':  0,
-        'inventario':  0,
-        'devolucoes':  0,
-        'erros':       0,
+        'nf_entrada': 0, 'nf_saida': 0, 'itens': 0,
+        'analiticos': 0, 'transporte': 0, 'inventario': 0,
+        'devolucoes': 0, 'erros': 0,
     }
 
-    # ── 0000 ──────────────────────────────────────────────────────────────
     if '0000' in parsed['por_tipo']:
         campos, _ = parsed['por_tipo']['0000'][0]
         cnpj = _c(campos, SPED_0000_CNPJ)
@@ -748,7 +719,6 @@ def converter_sped_para_dominio(
     else:
         log.append("AVISO: Registro 0000 não encontrado no SPED.")
 
-    # ── Lookup participantes (0150) ────────────────────────────────────────
     participantes = {}
     if '0150' in parsed['por_tipo']:
         for campos, _ in parsed['por_tipo']['0150']:
@@ -756,10 +726,8 @@ def converter_sped_para_dominio(
             participantes[cod] = campos
         log.append(f"Participantes carregados: {len(participantes)}")
 
-    # ── Hierarquia C100 → [C170] → [C190] ────────────────────────────────
     blocos_c    = []
     bloco_atual = None
-
     for tipo, campos, num_linha in parsed['linhas_ordenadas']:
         if tipo == 'C100':
             if bloco_atual is not None:
@@ -768,41 +736,32 @@ def converter_sped_para_dominio(
         elif tipo == 'C170':
             if bloco_atual is not None:
                 bloco_atual['c170'].append(campos)
-            else:
-                log.append(f"AVISO: C170 na linha {num_linha} sem C100 pai. Ignorado.")
         elif tipo == 'C190':
             if bloco_atual is not None:
                 bloco_atual['c190'].append(campos)
-            else:
-                log.append(f"AVISO: C190 na linha {num_linha} sem C100 pai. Ignorado.")
-
     if bloco_atual is not None:
         blocos_c.append(bloco_atual)
-
     log.append(f"Blocos C100 montados: {len(blocos_c)}")
 
-    # ── C100 → 1000 + 1020 + 1030(s) ─────────────────────────────────────
     for bloco in blocos_c:
         campos_c100 = bloco['c100']
         try:
-            ind_oper   = _c(campos_c100, SPED_C100_IND_OPER)
-            cod_part   = _c(campos_c100, SPED_C100_COD_PART)
-            cod_mod    = _c(campos_c100, SPED_C100_COD_MOD)
-            cod_sit    = _c(campos_c100, SPED_C100_COD_SIT)
-            serie      = _c(campos_c100, SPED_C100_SER)
-            num_doc    = _c(campos_c100, SPED_C100_NUM_DOC)
-            chv_nfe    = _c(campos_c100, SPED_C100_CHV_NFE)
-            dt_doc     = _c(campos_c100, SPED_C100_DT_DOC)
-            dt_es      = _c(campos_c100, SPED_C100_DT_ES)
-            vl_doc     = _c(campos_c100, SPED_C100_VL_DOC)
-            vl_icms    = _c(campos_c100, SPED_C100_VL_ICMS)
+            ind_oper = _c(campos_c100, SPED_C100_IND_OPER)
+            cod_part = _c(campos_c100, SPED_C100_COD_PART)
+            cod_mod  = _c(campos_c100, SPED_C100_COD_MOD)
+            cod_sit  = _c(campos_c100, SPED_C100_COD_SIT)
+            serie    = _c(campos_c100, SPED_C100_SER)
+            num_doc  = _c(campos_c100, SPED_C100_NUM_DOC)
+            chv_nfe  = _c(campos_c100, SPED_C100_CHV_NFE)
+            dt_doc   = _c(campos_c100, SPED_C100_DT_DOC)
+            dt_es    = _c(campos_c100, SPED_C100_DT_ES)
+            vl_doc   = _c(campos_c100, SPED_C100_VL_DOC)
+            vl_icms  = _c(campos_c100, SPED_C100_VL_ICMS)
 
             part_campos = participantes.get(cod_part, [])
             cnpj_part   = _c(part_campos, SPED_0150_CNPJ) if part_campos else ''
+            tipo_es     = 'E' if ind_oper == '0' else 'S'
 
-            tipo_es = 'E' if ind_oper == '0' else 'S'
-
-            # CFOP principal — primeiro C170, depois C190
             cfop_principal = ''
             if bloco['c170']:
                 cfop_principal = _c(bloco['c170'][0], SPED_C170_CFOP)
@@ -810,18 +769,14 @@ def converter_sped_para_dominio(
                 cfop_principal = _c(bloco['c190'][0], SPED_C190_CFOP)
 
             acum_principal = get_acumulador(cfop_principal, tabela_acum, nao_mapeados)
-
-            # Detecta se é devolução pelo indDevol do CFOP principal
-            eh_devol = is_devolucao(cfop_principal, tabela_flags)
+            eh_devol       = is_devolucao(cfop_principal, tabela_flags)
             if eh_devol:
                 stats['devolucoes'] += 1
 
-            # Alíquota ICMS da NF (do C190)
             aliq_icms_nf = '0,00'
             if bloco['c190']:
                 aliq_icms_nf = _c(bloco['c190'][0], SPED_C190_ALIQ) or '0,00'
 
-            # ── Registro 1000 ─────────────────────────────────────────────
             obs = 'DEVOLUCAO' if eh_devol else 'OBSERVACAO'
             saida.write(
                 f"|1000|{num_doc}|{cnpj_part}||{ind_oper}|{cfop_principal}|"
@@ -837,14 +792,12 @@ def converter_sped_para_dominio(
             else:
                 stats['nf_saida'] += 1
 
-            # ── Registro 1020 ─────────────────────────────────────────────
             saida.write(
                 f"|1020|{num_doc}||{vl_doc}|{aliq_icms_nf}|{vl_icms}|"
                 f"0,00|0,00|0,00|0,00|{vl_doc}||||\n"
             )
             stats['analiticos'] += 1
 
-            # ── Registros 1030 (itens) ────────────────────────────────────
             for campos_c170 in bloco['c170']:
                 num_item  = _c(campos_c170, SPED_C170_NUM_ITEM)
                 qtd       = _c(campos_c170, SPED_C170_QTD)
@@ -873,12 +826,9 @@ def converter_sped_para_dominio(
                 stats['itens'] += 1
 
         except Exception as e:
-            log.append(
-                f"ERRO ao converter C100 NF={_c(campos_c100, SPED_C100_NUM_DOC)}: {e}"
-            )
+            log.append(f"ERRO ao converter C100 NF={_c(campos_c100, SPED_C100_NUM_DOC)}: {e}")
             stats['erros'] += 1
 
-    # ── D100 → 1000 + 1020 (Conhecimento de Transporte) ──────────────────
     if 'D100' in parsed['por_tipo']:
         for campos, num_linha in parsed['por_tipo']['D100']:
             try:
@@ -910,12 +860,10 @@ def converter_sped_para_dominio(
                     f"0,00|0,00|0,00|0,00|{vl_doc}||||\n"
                 )
                 stats['transporte'] += 1
-
             except Exception as e:
                 log.append(f"ERRO ao converter D100 linha {num_linha}: {e}")
                 stats['erros'] += 1
 
-    # ── H010 → inventário (passthrough) ───────────────────────────────────
     if 'H010' in parsed['por_tipo']:
         for campos, _ in parsed['por_tipo']['H010']:
             saida.write(
@@ -927,7 +875,6 @@ def converter_sped_para_dominio(
             )
             stats['inventario'] += 1
 
-    # ── 9999 ──────────────────────────────────────────────────────────────
     saida.write("|9999|\n")
 
     if nao_mapeados:
@@ -959,7 +906,6 @@ def main():
     )
     apply_tr_theme()
 
-    # Carrega as duas tabelas do arquivo do repositório
     tabela_cfop, tabela_flags = carregar_tabela_cfop_oficial()
 
     st.markdown(
@@ -979,7 +925,6 @@ def main():
         unsafe_allow_html=True,
     )
 
-    # ── Sidebar ───────────────────────────────────────────────────────────
     with st.sidebar:
         st.markdown("### ℹ Sobre")
         st.markdown(f"**Versão:** {VERSAO}")
@@ -988,23 +933,20 @@ def main():
         st.markdown("---")
         st.markdown("### 📥 Entrada (SPED Fiscal)")
         st.markdown(
-            "- **0000** Abertura\n"
-            "- **0150** Participantes\n"
-            "- **C100** Notas Fiscais\n"
-            "- **C170** Itens de NF\n"
-            "- **C190** Analítico ICMS\n"
-            "- **D100** Conhecimento de Transporte\n"
+            "- **0000** Abertura\n- **0150** Participantes\n"
+            "- **C100** Notas Fiscais\n- **C170** Itens de NF\n"
+            "- **C190** Analítico ICMS\n- **D100** Conhecimento de Transporte\n"
             "- **H010** Inventário\n"
         )
         st.markdown("### 📤 Saída (Domínio Sistemas)")
         st.markdown(
-            "- **0000** Cabeçalho\n"
-            "- **1000** Nota Fiscal\n"
-            "- **1020** Totais da NF\n"
-            "- **1030** Itens da NF\n"
+            "- **0000** Cabeçalho\n- **1000** Nota Fiscal\n"
+            "- **1020** Totais da NF\n- **1030** Itens da NF\n"
             "- **9999** Encerramento\n"
         )
         st.markdown("---")
+
+        # ── Diagnóstico do arquivo CFOP ───────────────────────────────
         if tabela_cfop:
             n_dev_total = sum(1 for f in tabela_flags.values() if f.get('indDevol') == 1)
             st.success(
@@ -1013,10 +955,14 @@ def main():
                 f"↩ {n_dev_total} CFOPs de devolução"
             )
         else:
-            st.warning(
-                "⚠ Arquivo `160314_Tabela_CFOP.xlsx`\nnão encontrado.\n"
-                "Descrições indisponíveis."
+            caminhos_tentados = _candidatos_cfop()
+            st.error("❌ Tabela CFOP não carregada!")
+            detalhes = "\n".join(
+                f"{'✔' if os.path.isfile(c) else '✘'} `{c}`"
+                for c in caminhos_tentados
             )
+            st.warning(f"Caminhos verificados:\n{detalhes}")
+
         st.markdown("---")
         st.markdown("### 📑 Fluxo")
         st.markdown(
@@ -1027,7 +973,6 @@ def main():
             "5. **Converter** e baixar saída\n"
         )
 
-    # ── Instruções ────────────────────────────────────────────────────────
     with st.expander("📖 **Instruções de Uso** — clique para expandir", expanded=False):
         st.markdown(
             """
@@ -1037,25 +982,18 @@ def main():
             <b>🔍 Extrair CFOPs e Gerar Planilha</b>. O XLSX gerado contém os CFOPs
             com as <b>descrições oficiais da Receita Federal</b> e os indicadores
             <b>indNFe, indComunica, indTransp e indDevol</b>.</p>
-
             <h4>🔹 Etapa 2 — Preencher acumuladores</h4>
             <p>Abra o XLSX, preencha a coluna <b>ACUMULADOR</b> na aba
-            <i>Acumuladores</i> e salve. CFOPs marcados como <b>Devolução</b>
-            são destacados em vermelho para facilitar a identificação.</p>
-
+            <i>Acumuladores</i> e salve.</p>
             <h4>🔹 Etapa 3 — Converter</h4>
             <p>Faça o upload do XLSX preenchido e clique em
             <b>▶ Converter SPED → Domínio</b>.</p>
-
             <hr>
             <h4>⚠ Observações</h4>
             <ul>
-                <li>Entrada: SPED Fiscal EFD ICMS/IPI (C100/C170/C190/D100).</li>
-                <li>Saída: leiaute Domínio Sistemas (1000/1020/1030).</li>
                 <li>CFOPs sem acumulador preenchido receberão <b>9999</b>.</li>
                 <li>CFOPs com <b>indDevol=1</b> são identificados automaticamente.</li>
                 <li>Saída em <b>ANSI (Latin-1)</b>.</li>
-                <li>Fonte das descrições e flags: <b>160314_Tabela_CFOP.xlsx</b>.</li>
             </ul>
             </div>
             """,
@@ -1064,7 +1002,6 @@ def main():
 
     st.markdown("---")
 
-    # ── Session state ─────────────────────────────────────────────────────
     defaults = {
         "log":             [f"Aplicação pronta. Versão: {VERSAO} | CFOPs RF: {len(tabela_cfop)}"],
         "resultado":       None,
@@ -1081,14 +1018,11 @@ def main():
         if k not in st.session_state:
             st.session_state[k] = v
 
-    # ════════════════════════════════════════════════════════════════════
-    # ETAPA 1 — UPLOAD DO SPED + EXTRAÇÃO DE CFOPs
-    # ════════════════════════════════════════════════════════════════════
+    # ── Etapa 1 ───────────────────────────────────────────────────────────
     st.markdown("### 🔍 Etapa 1 — Upload do SPED Fiscal e extração de CFOPs")
 
     uploaded_file = st.file_uploader(
-        "📂 Arquivo SPED Fiscal (.txt)",
-        type=["txt"],
+        "📂 Arquivo SPED Fiscal (.txt)", type=["txt"],
         help="Arquivo EFD ICMS/IPI exportado pelo sistema ERP",
         key="upload_sped",
     )
@@ -1104,8 +1038,7 @@ def main():
             st.session_state.stats           = None
             st.session_state.tabela_acum_ok  = False
             st.session_state.log             = [
-                f"Arquivo carregado: {uploaded_file.name} "
-                f"({len(raw_atual)/1024:.1f} KB)"
+                f"Arquivo carregado: {uploaded_file.name} ({len(raw_atual)/1024:.1f} KB)"
             ]
 
     if st.session_state.arquivo_raw is not None:
@@ -1119,8 +1052,7 @@ def main():
         extrair = st.button(
             "🔍 Extrair CFOPs e Gerar Planilha",
             disabled=(st.session_state.arquivo_raw is None),
-            use_container_width=True,
-            type="primary",
+            use_container_width=True, type="primary",
         )
     with col_e2:
         if st.session_state.xlsx_bytes is not None:
@@ -1129,8 +1061,7 @@ def main():
                 data=st.session_state.xlsx_bytes,
                 file_name=st.session_state.xlsx_nome,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-                type="primary",
+                use_container_width=True, type="primary",
             )
 
     if extrair:
@@ -1139,10 +1070,11 @@ def main():
         st.session_state.cfops_extraidos = None
 
         try:
-            content    = decode_arquivo(st.session_state.arquivo_raw)
-            parsed     = parse_sped(content)
-            tipos_enc  = list(parsed['por_tipo'].keys())
-            st.session_state.log.append(f"Registros encontrados: {', '.join(tipos_enc)}")
+            content   = decode_arquivo(st.session_state.arquivo_raw)
+            parsed    = parse_sped(content)
+            st.session_state.log.append(
+                f"Registros encontrados: {', '.join(parsed['por_tipo'].keys())}"
+            )
 
             cfops_dict = extrair_cfops_do_sped(parsed, tabela_flags, st.session_state.log)
 
@@ -1158,12 +1090,10 @@ def main():
                 st.session_state.xlsx_bytes      = xlsx_bytes
                 st.session_state.xlsx_nome       = nome_xlsx
                 st.session_state.cfops_extraidos = cfops_dict
-
                 n_dev = sum(1 for v in cfops_dict.values() if v.get('indDevol') == 1)
                 st.session_state.log.append(
                     f"✔ {len(cfops_dict)} CFOP(s) extraído(s) | "
-                    f"{n_dev} de devolução (indDevol=1) | "
-                    f"Planilha: {nome_xlsx}"
+                    f"{n_dev} de devolução | Planilha: {nome_xlsx}"
                 )
 
         except Exception:
@@ -1172,7 +1102,6 @@ def main():
 
         st.rerun()
 
-    # Métricas dos CFOPs extraídos
     if st.session_state.cfops_extraidos:
         cfops_dict = st.session_state.cfops_extraidos
         n_ent = sum(1 for v in cfops_dict.values() if v['tipo_operacao'] == 'Entrada')
@@ -1192,7 +1121,6 @@ def main():
                     'Descrição (RF)': get_descricao_cfop(cfop, tabela_cfop),
                     'Tipo':           info['tipo_operacao'],
                     'Devolução':      '✔' if info.get('indDevol') == 1 else '',
-                    'NFe':            '✔' if info.get('indNFe')   == 1 else '',
                     'Ocorrências':    info['ocorrencias'],
                     'Registros':      ', '.join(sorted(info['registros'])),
                 }
@@ -1202,9 +1130,7 @@ def main():
 
     st.markdown("---")
 
-    # ════════════════════════════════════════════════════════════════════
-    # ETAPA 2 — TABELA DE ACUMULADORES + CONVERSÃO
-    # ════════════════════════════════════════════════════════════════════
+    # ── Etapa 2 ───────────────────────────────────────────────────────────
     st.markdown("### ▶ Etapa 2 — Converter com a tabela de acumuladores preenchida")
 
     arquivo_acum = st.file_uploader(
@@ -1220,9 +1146,7 @@ def main():
         tab_prev = carregar_acumuladores(raw_acum, arquivo_acum.name, log_temp)
         arquivo_acum.seek(0)
         if tab_prev is not None:
-            st.success(
-                f"✅ Tabela válida — **{len(tab_prev)} CFOPs** com acumulador preenchido."
-            )
+            st.success(f"✅ Tabela válida — **{len(tab_prev)} CFOPs** com acumulador preenchido.")
             st.session_state.tabela_acum_ok = True
         else:
             for msg in log_temp:
@@ -1242,8 +1166,7 @@ def main():
         converter = st.button(
             "▶ Converter SPED → Domínio",
             disabled=not pode_converter,
-            use_container_width=True,
-            type="primary",
+            use_container_width=True, type="primary",
         )
     with col2:
         limpar = st.button("🗑 Limpar Tudo", use_container_width=True)
@@ -1253,7 +1176,6 @@ def main():
             del st.session_state[k]
         st.rerun()
 
-    # ── Conversão ─────────────────────────────────────────────────────────
     if converter and pode_converter:
         st.session_state.log       = ["Iniciando conversão SPED → Domínio Sistemas..."]
         st.session_state.resultado = None
@@ -1262,9 +1184,7 @@ def main():
         try:
             arquivo_acum.seek(0)
             tabela_acum = carregar_acumuladores(
-                arquivo_acum.read(),
-                arquivo_acum.name,
-                st.session_state.log,
+                arquivo_acum.read(), arquivo_acum.name, st.session_state.log,
             )
             if tabela_acum is None:
                 st.session_state.log.append("ERRO: Tabela inválida. Abortando.")
@@ -1278,7 +1198,6 @@ def main():
             )
 
             resultado_bytes = encode_ansi_seguro(resultado_txt, st.session_state.log)
-
             st.session_state.resultado  = resultado_bytes
             st.session_state.stats      = stats
             st.session_state.nome_saida = (
@@ -1291,7 +1210,6 @@ def main():
 
         st.rerun()
 
-    # ── Resultado ──────────────────────────────────────────────────────────
     if st.session_state.resultado is not None:
         st.success("✅ Arquivo convertido com sucesso!")
 
@@ -1323,11 +1241,9 @@ def main():
             data=st.session_state.resultado,
             file_name=st.session_state.nome_saida,
             mime="text/plain",
-            use_container_width=True,
-            type="primary",
+            use_container_width=True, type="primary",
         )
 
-    # ── Log ────────────────────────────────────────────────────────────────
     st.markdown("**Log de processamento**")
     log_texto = "\n".join(st.session_state.log)
     tem_erro  = any(str(l).startswith("ERRO") for l in st.session_state.log)
