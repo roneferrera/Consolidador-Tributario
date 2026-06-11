@@ -13,7 +13,7 @@ from openpyxl.utils import get_column_letter
 # ==============================
 # VERSÃO
 # ==============================
-VERSAO = "V2.2"
+VERSAO = "V2.3"
 
 # ==============================
 # TEMA TR
@@ -82,49 +82,80 @@ def encode_ansi_seguro(conteudo: str, log: list) -> bytes:
 
 # ==============================
 # TABELA OFICIAL DE CFOPs — RECEITA FEDERAL
-# ✅ V2.2 — Correção: remove ".0" que o pandas adiciona ao ler inteiros como string
-# Ex: pandas lê 1102 (inteiro Excel) como "1102.0" → split('.')[0] → "1102"
+# Lê: CFOP, Descrição Resumida, indNFe, indComunica, indTransp, indDevol
 # ==============================
 @st.cache_data(show_spinner=False)
-def carregar_tabela_cfop_oficial() -> dict:
+def carregar_tabela_cfop_oficial() -> tuple[dict, dict]:
+    """
+    Retorna:
+        tabela_descr : dict  { '1101': 'Compra p/ industrialização...', ... }
+        tabela_flags : dict  { '1101': {'indNFe':1,'indComunica':0,'indTransp':0,'indDevol':0}, ... }
+    """
     caminho = os.path.join(os.path.dirname(__file__), "160314_Tabela_CFOP.xlsx")
+    tabela_descr: dict = {}
+    tabela_flags: dict = {}
+
     try:
         df = pd.read_excel(caminho, sheet_name="CFOP", dtype=str)
         df.columns = [str(c).strip().upper() for c in df.columns]
 
-        col_cfop  = next((c for c in df.columns if 'CFOP'   in c), None)
+        # ── Localiza colunas dinamicamente ────────────────────────────────
+        col_cfop  = next((c for c in df.columns if c == 'CFOP'), None)
         col_descr = next((c for c in df.columns if 'DESCRI' in c or 'RESUMIDA' in c), None)
+        col_nfe   = next((c for c in df.columns if 'INDNFE'    in c.replace(' ', '').upper()), None)
+        col_com   = next((c for c in df.columns if 'INDCOMUNICA' in c.replace(' ', '').upper()), None)
+        col_trp   = next((c for c in df.columns if 'INDTRANSP'  in c.replace(' ', '').upper()), None)
+        col_dev   = next((c for c in df.columns if 'INDDEVOL'   in c.replace(' ', '').upper()), None)
 
         if col_cfop is None or col_descr is None:
-            return {}
+            return {}, {}
 
-        tabela = {}
         for _, row in df.iterrows():
             raw = str(row[col_cfop]).strip()
-
-            # ✅ CORREÇÃO V2.2: remove o ".0" que o pandas adiciona
-            # ao ler colunas de inteiros do Excel com dtype=str
-            # Ex: "1102.0" → split('.')[0] → "1102"
+            # Remove ".0" que pandas adiciona ao ler inteiros com dtype=str
             if '.' in raw:
                 raw = raw.split('.')[0]
-
             cfop  = raw.zfill(4)
             descr = str(row[col_descr]).strip()
 
-            if cfop and cfop != '0000' and descr and descr.lower() != 'nan':
-                tabela[cfop] = descr
+            if not cfop or cfop == '0000' or not descr or descr.lower() == 'nan':
+                continue
 
-        return tabela
+            tabela_descr[cfop] = descr
+
+            def _flag(col):
+                if col is None:
+                    return 0
+                v = str(row[col]).strip().split('.')[0]
+                try:
+                    return int(v)
+                except ValueError:
+                    return 0
+
+            tabela_flags[cfop] = {
+                'indNFe':     _flag(col_nfe),
+                'indComunica':_flag(col_com),
+                'indTransp':  _flag(col_trp),
+                'indDevol':   _flag(col_dev),
+            }
 
     except FileNotFoundError:
-        return {}
+        pass
     except Exception:
-        return {}
+        pass
+
+    return tabela_descr, tabela_flags
 
 
-def get_descricao_cfop(cfop: str, tabela_cfop: dict) -> str:
-    cfop_norm = str(cfop).strip().zfill(4)
-    return tabela_cfop.get(cfop_norm, '— descrição não encontrada —')
+def get_descricao_cfop(cfop: str, tabela_descr: dict) -> str:
+    return tabela_descr.get(str(cfop).strip().zfill(4), '— descrição não encontrada —')
+
+
+def get_flags_cfop(cfop: str, tabela_flags: dict) -> dict:
+    return tabela_flags.get(
+        str(cfop).strip().zfill(4),
+        {'indNFe': 0, 'indComunica': 0, 'indTransp': 0, 'indDevol': 0}
+    )
 
 
 def get_tipo_operacao(cfop: str) -> str:
@@ -134,6 +165,21 @@ def get_tipo_operacao(cfop: str) -> str:
     if primeiro in ('5', '6', '7'):
         return 'Saída'
     return 'Desconhecido'
+
+
+def is_devolucao(cfop: str, tabela_flags: dict) -> bool:
+    """Retorna True se o CFOP for de devolução (indDevol=1)."""
+    return get_flags_cfop(cfop, tabela_flags).get('indDevol', 0) == 1
+
+
+def is_comunicacao(cfop: str, tabela_flags: dict) -> bool:
+    """Retorna True se o CFOP for de comunicação (indComunica=1)."""
+    return get_flags_cfop(cfop, tabela_flags).get('indComunica', 0) == 1
+
+
+def is_transporte(cfop: str, tabela_flags: dict) -> bool:
+    """Retorna True se o CFOP for de transporte (indTransp=1)."""
+    return get_flags_cfop(cfop, tabela_flags).get('indTransp', 0) == 1
 
 
 # ==============================
@@ -242,7 +288,7 @@ SPED_H010_VL_ITEM   = 5
 # ==============================
 # EXTRAÇÃO DE CFOPs DO SPED
 # ==============================
-def extrair_cfops_do_sped(parsed: dict, log: list) -> dict:
+def extrair_cfops_do_sped(parsed: dict, tabela_flags: dict, log: list) -> dict:
     cfops = {}
 
     def registrar(cfop_raw: str, tipo_reg: str):
@@ -253,10 +299,15 @@ def extrair_cfops_do_sped(parsed: dict, log: list) -> dict:
         if cfop == '0000':
             return
         if cfop not in cfops:
+            flags = get_flags_cfop(cfop, tabela_flags)
             cfops[cfop] = {
                 'registros':     set(),
                 'ocorrencias':   0,
                 'tipo_operacao': get_tipo_operacao(cfop),
+                'indNFe':        flags['indNFe'],
+                'indComunica':   flags['indComunica'],
+                'indTransp':     flags['indTransp'],
+                'indDevol':      flags['indDevol'],
             }
         cfops[cfop]['registros'].add(tipo_reg)
         cfops[cfop]['ocorrencias'] += 1
@@ -282,7 +333,11 @@ def extrair_cfops_do_sped(parsed: dict, log: list) -> dict:
 # ==============================
 # GERADOR XLSX — TEMA TR
 # ==============================
-def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_cfop: dict) -> bytes:
+def gerar_xlsx_acumuladores_tr(
+    cfops_dict: dict,
+    tabela_descr: dict,
+    tabela_flags: dict,
+) -> bytes:
     wb = Workbook()
 
     COR_LARANJA   = "FF8000"
@@ -315,7 +370,7 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_cfop: dict) -> bytes:
     ws1.title = "Acumuladores"
     ws1.sheet_view.showGridLines = False
 
-    ws1.merge_cells("A1:E1")
+    ws1.merge_cells("A1:I1")
     ws1.row_dimensions[1].height = 36
     c = ws1["A1"]
     c.value     = "Thomson Reuters  |  Domínio Sistemas  —  Tabela de Acumuladores CFOP"
@@ -323,7 +378,7 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_cfop: dict) -> bytes:
     c.font      = Font(name='Segoe UI', bold=True, size=13, color=COR_LARANJA)
     c.alignment = left_al()
 
-    ws1.merge_cells("A2:E2")
+    ws1.merge_cells("A2:I2")
     ws1.row_dimensions[2].height = 20
     c2 = ws1["A2"]
     c2.value = (
@@ -334,7 +389,7 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_cfop: dict) -> bytes:
     c2.font      = Font(name='Segoe UI', size=9, color=COR_BRANCO)
     c2.alignment = left_al()
 
-    ws1.merge_cells("A3:E3")
+    ws1.merge_cells("A3:I3")
     ws1.row_dimensions[3].height = 18
     c3 = ws1["A3"]
     c3.value     = "⚠  Preencha a coluna ACUMULADOR para cada CFOP antes de fazer o upload no conversor."
@@ -345,8 +400,12 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_cfop: dict) -> bytes:
     ws1.row_dimensions[4].height = 6
     ws1.row_dimensions[5].height = 22
 
-    cabecalhos = ['CFOP', 'DESCRIÇÃO OFICIAL (Receita Federal)', 'TIPO OPERAÇÃO', 'OCORRÊNCIAS', 'ACUMULADOR']
-    col_widths  = [10,     60,                                    16,               14,            16]
+    cabecalhos = [
+        'CFOP', 'DESCRIÇÃO OFICIAL (Receita Federal)', 'TIPO OPERAÇÃO',
+        'OCORRÊNCIAS', 'DEVOLUÇÃO', 'NFe', 'COMUNICAÇÃO', 'TRANSPORTE', 'ACUMULADOR'
+    ]
+    col_widths = [10, 60, 16, 14, 12, 8, 14, 14, 16]
+
     for ci, (cab, w) in enumerate(zip(cabecalhos, col_widths), start=1):
         ws1.column_dimensions[get_column_letter(ci)].width = w
         cell           = ws1.cell(row=5, column=ci, value=cab)
@@ -362,8 +421,16 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_cfop: dict) -> bytes:
              if info['tipo_operacao'] == 'Entrada' \
              else (COR_LARANJA_C if idx % 2 == 0 else COR_BRANCO)
 
-        descricao = get_descricao_cfop(cfop, tabela_cfop)
-        valores   = [cfop, descricao, info['tipo_operacao'], info['ocorrencias'], '']
+        descricao = get_descricao_cfop(cfop, tabela_descr)
+        eh_devol  = '✔' if info.get('indDevol')    == 1 else ''
+        eh_nfe    = '✔' if info.get('indNFe')       == 1 else ''
+        eh_com    = '✔' if info.get('indComunica')  == 1 else ''
+        eh_trp    = '✔' if info.get('indTransp')    == 1 else ''
+
+        valores = [
+            cfop, descricao, info['tipo_operacao'], info['ocorrencias'],
+            eh_devol, eh_nfe, eh_com, eh_trp, ''
+        ]
 
         for ci, valor in enumerate(valores, start=1):
             cell        = ws1.cell(row=linha, column=ci, value=valor)
@@ -385,7 +452,14 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_cfop: dict) -> bytes:
                 cell.fill      = fill(bg)
                 cell.font      = Font(name='Segoe UI', size=10, color=COR_CINZA_ESC)
                 cell.alignment = center()
-            elif ci == 5:
+            elif ci in (5, 6, 7, 8):
+                # Flags: Devolução, NFe, Comunicação, Transporte
+                cor_flag = "B71C1C" if ci == 5 and valor == '✔' else (
+                           "1B5E20" if valor == '✔' else COR_CINZA_ESC)
+                cell.fill      = fill(COR_VERM_CLR if ci == 5 and valor == '✔' else bg)
+                cell.font      = Font(name='Segoe UI', bold=True, size=10, color=cor_flag)
+                cell.alignment = center()
+            elif ci == 9:
                 cell.fill      = fill("FFF8F0")
                 cell.font      = Font(name='Segoe UI', bold=True, size=10, color=COR_LARANJA)
                 cell.alignment = center()
@@ -397,7 +471,7 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_cfop: dict) -> bytes:
                 )
         linha += 1
 
-    ws1.merge_cells(f"A{linha}:E{linha}")
+    ws1.merge_cells(f"A{linha}:I{linha}")
     ws1.row_dimensions[linha].height = 18
     cr = ws1.cell(row=linha, column=1,
                   value="Thomson Reuters  |  Domínio Sistemas  |  Descrições: Receita Federal")
@@ -406,16 +480,17 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_cfop: dict) -> bytes:
     cr.alignment = Alignment(horizontal='right', vertical='center')
 
     ws1.freeze_panes    = "A6"
-    ws1.auto_filter.ref = f"A5:E{linha - 1}"
+    ws1.auto_filter.ref = f"A5:I{linha - 1}"
 
     # ── Aba 2: CFOPs Encontrados ──────────────────────────────────────────
     ws2 = wb.create_sheet(title="CFOPs Encontrados")
     ws2.sheet_view.showGridLines = False
 
-    n_ent = sum(1 for v in cfops_dict.values() if v['tipo_operacao'] == 'Entrada')
-    n_sai = sum(1 for v in cfops_dict.values() if v['tipo_operacao'] == 'Saída')
+    n_ent  = sum(1 for v in cfops_dict.values() if v['tipo_operacao'] == 'Entrada')
+    n_sai  = sum(1 for v in cfops_dict.values() if v['tipo_operacao'] == 'Saída')
+    n_dev  = sum(1 for v in cfops_dict.values() if v.get('indDevol') == 1)
 
-    ws2.merge_cells("A1:F1")
+    ws2.merge_cells("A1:H1")
     ws2.row_dimensions[1].height = 36
     c = ws2["A1"]
     c.value     = "Thomson Reuters  |  Domínio Sistemas  —  CFOPs Identificados no SPED Fiscal"
@@ -423,13 +498,13 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_cfop: dict) -> bytes:
     c.font      = Font(name='Segoe UI', bold=True, size=13, color=COR_LARANJA)
     c.alignment = left_al()
 
-    ws2.merge_cells("A2:F2")
+    ws2.merge_cells("A2:H2")
     ws2.row_dimensions[2].height = 20
     c2 = ws2["A2"]
     c2.value = (
         f"Analisado em {datetime.now().strftime('%d/%m/%Y %H:%M')}  |  "
         f"Total: {len(cfops_dict)}  |  Entradas: {n_ent}  |  Saídas: {n_sai}  |  "
-        f"Fonte: Receita Federal"
+        f"Devoluções: {n_dev}  |  Fonte: Receita Federal"
     )
     c2.fill      = fill(COR_LARANJA)
     c2.font      = Font(name='Segoe UI', size=9, color=COR_BRANCO)
@@ -438,8 +513,10 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_cfop: dict) -> bytes:
     ws2.row_dimensions[3].height = 6
     ws2.row_dimensions[4].height = 22
 
-    cab2  = ['CFOP', 'DESCRIÇÃO OFICIAL (Receita Federal)', 'TIPO OPERAÇÃO', 'REGISTROS SPED', 'OCORRÊNCIAS', 'STATUS']
-    wids2 = [10,     60,                                    16,               18,                14,            22]
+    cab2  = ['CFOP', 'DESCRIÇÃO OFICIAL (Receita Federal)', 'TIPO OPERAÇÃO',
+             'DEVOLUÇÃO', 'REGISTROS SPED', 'OCORRÊNCIAS', 'STATUS RF', 'STATUS']
+    wids2 = [10, 60, 16, 12, 18, 14, 12, 22]
+
     for ci, (cab, w) in enumerate(zip(cab2, wids2), start=1):
         ws2.column_dimensions[get_column_letter(ci)].width = w
         cell           = ws2.cell(row=4, column=ci, value=cab)
@@ -452,13 +529,20 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_cfop: dict) -> bytes:
     for idx, (cfop, info) in enumerate(cfops_ord):
         ws2.row_dimensions[linha2].height = 30
         bg      = COR_CINZA_CLR if idx % 2 == 0 else COR_BRANCO
-        descr   = get_descricao_cfop(cfop, tabela_cfop)
+        descr   = get_descricao_cfop(cfop, tabela_descr)
         mapeado = descr != '— descrição não encontrada —'
         status  = '✔ Catalogado' if mapeado else '✘ Não catalogado'
         bg_st   = COR_VERDE_CLR if mapeado else COR_VERM_CLR
         regs    = ', '.join(sorted(info['registros']))
+        eh_dev  = '✔ Devolução' if info.get('indDevol') == 1 else '—'
+        # status RF baseado em indNFe
+        status_rf = 'NFe' if info.get('indNFe') == 1 else (
+                    'CT-e' if info.get('indTransp') == 1 else (
+                    'Comunic.' if info.get('indComunica') == 1 else '—'))
 
-        vals = [cfop, descr, info['tipo_operacao'], regs, info['ocorrencias'], status]
+        vals = [cfop, descr, info['tipo_operacao'], eh_dev, regs,
+                info['ocorrencias'], status_rf, status]
+
         for ci, valor in enumerate(vals, start=1):
             cell        = ws2.cell(row=linha2, column=ci, value=valor)
             cell.border = borda_fina
@@ -475,18 +559,24 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_cfop: dict) -> bytes:
                 cor = "1B5E20" if info['tipo_operacao'] == 'Entrada' else "B71C1C"
                 cell.font = Font(name='Segoe UI', bold=True, size=10, color=cor)
                 cell.alignment = center()
-            elif ci in (4, 5):
+            elif ci == 4:
+                cor_d = "B71C1C" if info.get('indDevol') == 1 else COR_CINZA_ESC
+                bg_d  = COR_VERM_CLR if info.get('indDevol') == 1 else bg
+                cell.fill = fill(bg_d)
+                cell.font = Font(name='Segoe UI', bold=True, size=9, color=cor_d)
+                cell.alignment = center()
+            elif ci in (5, 6, 7):
                 cell.fill      = fill(bg)
                 cell.font      = Font(name='Segoe UI', size=10, color=COR_CINZA_ESC)
                 cell.alignment = center()
-            elif ci == 6:
+            elif ci == 8:
                 cell.fill = fill(bg_st)
                 cor = "1B5E20" if mapeado else "B71C1C"
                 cell.font = Font(name='Segoe UI', bold=True, size=10, color=cor)
                 cell.alignment = center()
         linha2 += 1
 
-    ws2.merge_cells(f"A{linha2}:F{linha2}")
+    ws2.merge_cells(f"A{linha2}:H{linha2}")
     ws2.row_dimensions[linha2].height = 18
     cr2 = ws2.cell(row=linha2, column=1,
                    value="Thomson Reuters  |  Domínio Sistemas  |  Fonte: Receita Federal")
@@ -495,13 +585,13 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_cfop: dict) -> bytes:
     cr2.alignment = Alignment(horizontal='right', vertical='center')
 
     ws2.freeze_panes    = "A5"
-    ws2.auto_filter.ref = f"A4:F{linha2 - 1}"
+    ws2.auto_filter.ref = f"A4:H{linha2 - 1}"
 
     # ── Aba 3: Tabela Completa CFOP ───────────────────────────────────────
     ws3 = wb.create_sheet(title="Tabela CFOP Receita Federal")
     ws3.sheet_view.showGridLines = False
 
-    ws3.merge_cells("A1:C1")
+    ws3.merge_cells("A1:G1")
     ws3.row_dimensions[1].height = 36
     c = ws3["A1"]
     c.value     = "Thomson Reuters  |  Tabela Completa de CFOPs — Receita Federal"
@@ -509,10 +599,10 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_cfop: dict) -> bytes:
     c.font      = Font(name='Segoe UI', bold=True, size=13, color=COR_LARANJA)
     c.alignment = left_al()
 
-    ws3.merge_cells("A2:C2")
+    ws3.merge_cells("A2:G2")
     ws3.row_dimensions[2].height = 20
     c2 = ws3["A2"]
-    c2.value     = f"Total: {len(tabela_cfop)} CFOPs  |  Fonte: 160314_Tabela_CFOP.xlsx — Receita Federal"
+    c2.value     = f"Total: {len(tabela_descr)} CFOPs  |  Fonte: 160314_Tabela_CFOP.xlsx — Receita Federal"
     c2.fill      = fill(COR_LARANJA)
     c2.font      = Font(name='Segoe UI', size=9, color=COR_BRANCO)
     c2.alignment = left_al()
@@ -520,7 +610,10 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_cfop: dict) -> bytes:
     ws3.row_dimensions[3].height = 6
     ws3.row_dimensions[4].height = 22
 
-    for ci, (cab, w) in enumerate(zip(['CFOP', 'TIPO OPERAÇÃO', 'DESCRIÇÃO OFICIAL'], [10, 16, 70]), start=1):
+    cab3  = ['CFOP', 'TIPO OPERAÇÃO', 'DESCRIÇÃO OFICIAL', 'DEVOLUÇÃO', 'NFe', 'COMUNICAÇÃO', 'TRANSPORTE']
+    wids3 = [10, 16, 70, 12, 8, 14, 14]
+
+    for ci, (cab, w) in enumerate(zip(cab3, wids3), start=1):
         ws3.column_dimensions[get_column_letter(ci)].width = w
         cell           = ws3.cell(row=4, column=ci, value=cab)
         cell.fill      = fill(COR_LARANJA)
@@ -529,11 +622,17 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_cfop: dict) -> bytes:
         cell.border    = borda_fina
 
     linha3 = 5
-    for idx, (cfop, descr) in enumerate(sorted(tabela_cfop.items())):
+    for idx, (cfop, descr) in enumerate(sorted(tabela_descr.items())):
         ws3.row_dimensions[linha3].height = 28
-        bg   = COR_CINZA_CLR if idx % 2 == 0 else COR_BRANCO
-        tipo = get_tipo_operacao(cfop)
-        for ci, valor in enumerate([cfop, tipo, descr], start=1):
+        bg    = COR_CINZA_CLR if idx % 2 == 0 else COR_BRANCO
+        tipo  = get_tipo_operacao(cfop)
+        flags = tabela_flags.get(cfop, {})
+        f_dev = '✔' if flags.get('indDevol')    == 1 else ''
+        f_nfe = '✔' if flags.get('indNFe')       == 1 else ''
+        f_com = '✔' if flags.get('indComunica')  == 1 else ''
+        f_trp = '✔' if flags.get('indTransp')    == 1 else ''
+
+        for ci, valor in enumerate([cfop, tipo, descr, f_dev, f_nfe, f_com, f_trp], start=1):
             cell        = ws3.cell(row=linha3, column=ci, value=valor)
             cell.fill   = fill(bg)
             cell.border = borda_fina
@@ -544,13 +643,18 @@ def gerar_xlsx_acumuladores_tr(cfops_dict: dict, tabela_cfop: dict) -> bytes:
                 cor = "1B5E20" if tipo == 'Entrada' else "B71C1C"
                 cell.font = Font(name='Segoe UI', bold=True, size=10, color=cor)
                 cell.alignment = center()
-            else:
+            elif ci == 3:
                 cell.font      = Font(name='Segoe UI', size=9, color=COR_CINZA_ESC)
                 cell.alignment = wrap_al()
+            else:
+                cor_f = "B71C1C" if (ci == 4 and valor == '✔') else (
+                        "1B5E20" if valor == '✔' else COR_CINZA_ESC)
+                cell.font = Font(name='Segoe UI', bold=True, size=10, color=cor_f)
+                cell.alignment = center()
         linha3 += 1
 
     ws3.freeze_panes    = "A5"
-    ws3.auto_filter.ref = f"A4:C{linha3 - 1}"
+    ws3.auto_filter.ref = f"A4:G{linha3 - 1}"
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -579,7 +683,6 @@ def carregar_acumuladores(arquivo_bytes: bytes, nome_arquivo: str, log: list) ->
         tabela = {}
         for _, row in df.iterrows():
             raw_cfop = str(row['CFOP']).strip()
-            # ✅ mesma correção aplicada à tabela RF
             if '.' in raw_cfop:
                 raw_cfop = raw_cfop.split('.')[0]
             cfop = raw_cfop.zfill(4)
@@ -616,9 +719,13 @@ def get_acumulador(cfop: str, tabela: dict, nao_mapeados: set) -> str:
 
 # ==============================
 # CONVERSÃO SPED FISCAL → DOMÍNIO SISTEMAS
-# Baseado no leiaute: exemplo_arquivo__nota_entrada.txt
 # ==============================
-def converter_sped_para_dominio(parsed: dict, tabela_acum: dict, log: list) -> tuple:
+def converter_sped_para_dominio(
+    parsed: dict,
+    tabela_acum: dict,
+    tabela_flags: dict,
+    log: list,
+) -> tuple:
     saida        = StringIO()
     nao_mapeados = set()
     stats = {
@@ -628,6 +735,7 @@ def converter_sped_para_dominio(parsed: dict, tabela_acum: dict, log: list) -> t
         'analiticos':  0,
         'transporte':  0,
         'inventario':  0,
+        'devolucoes':  0,
         'erros':       0,
     }
 
@@ -674,10 +782,6 @@ def converter_sped_para_dominio(parsed: dict, tabela_acum: dict, log: list) -> t
     log.append(f"Blocos C100 montados: {len(blocos_c)}")
 
     # ── C100 → 1000 + 1020 + 1030(s) ─────────────────────────────────────
-    # Leiaute baseado em: exemplo_arquivo__nota_entrada.txt
-    # |1000|NUM_DOC|CNPJ_PART||IND_OPER|CFOP|SERIE|COD_MOD|COD_SIT|CHV_NFE|||DT_DOC|DT_ES|VL_DOC||OBS|C||||||||E/S|...
-    # |1020|NUM_DOC||VL_DOC|ALIQ_ICMS|VL_ICMS|0,00|0,00|0,00|0,00|VL_DOC||||
-    # |1030|NUM_ITEM|QTD|VL_UNIT|0|0|1|DT_DOC||COD_SIT|VL_ITEM|VL_DESC|VL_ITEM|0,00|ALIQ|...|VL_ICMS|...|CFOP|...|VL_BC|...
     for bloco in blocos_c:
         campos_c100 = bloco['c100']
         try:
@@ -707,16 +811,22 @@ def converter_sped_para_dominio(parsed: dict, tabela_acum: dict, log: list) -> t
 
             acum_principal = get_acumulador(cfop_principal, tabela_acum, nao_mapeados)
 
+            # Detecta se é devolução pelo indDevol do CFOP principal
+            eh_devol = is_devolucao(cfop_principal, tabela_flags)
+            if eh_devol:
+                stats['devolucoes'] += 1
+
             # Alíquota ICMS da NF (do C190)
             aliq_icms_nf = '0,00'
             if bloco['c190']:
                 aliq_icms_nf = _c(bloco['c190'][0], SPED_C190_ALIQ) or '0,00'
 
             # ── Registro 1000 ─────────────────────────────────────────────
+            obs = 'DEVOLUCAO' if eh_devol else 'OBSERVACAO'
             saida.write(
                 f"|1000|{num_doc}|{cnpj_part}||{ind_oper}|{cfop_principal}|"
                 f"{serie}|{cod_mod}|{cod_sit}|{chv_nfe}|||"
-                f"{dt_doc}|{dt_es}|{vl_doc}||OBSERVACAO|C||||||||{tipo_es}|"
+                f"{dt_doc}|{dt_es}|{vl_doc}||{obs}|C||||||||{tipo_es}|"
                 f"0,00|0,00|0,00|0,00||0,00||||0,00|0,00|0,00||{vl_doc}|"
                 f"0|0||||{acum_principal}||0,00||||||N|S||{tipo_es}||0|||||"
                 f"||||||||||||0|{cod_sit}|0||0,00|0,00|0,00|||||||||||\n"
@@ -746,7 +856,6 @@ def converter_sped_para_dominio(parsed: dict, tabela_acum: dict, log: list) -> t
                 aliq_i    = _c(campos_c170, SPED_C170_ALIQ_ICMS)
                 vl_icms_i = _c(campos_c170, SPED_C170_VL_ICMS)
 
-                # VL_UNIT = VL_ITEM / QTD
                 try:
                     vl_unit = f"{float(vl_item.replace(',', '.')) / float(qtd.replace(',', '.')):.3f}".replace('.', ',')
                 except Exception:
@@ -831,6 +940,7 @@ def converter_sped_para_dominio(parsed: dict, tabela_acum: dict, log: list) -> t
         f"Conversão concluída — "
         f"NFs entrada={stats['nf_entrada']} | NFs saída={stats['nf_saida']} | "
         f"Itens={stats['itens']} | Analíticos={stats['analiticos']} | "
+        f"Devoluções={stats['devolucoes']} | "
         f"Transporte={stats['transporte']} | Inventário={stats['inventario']} | "
         f"Erros={stats['erros']}"
     )
@@ -849,7 +959,8 @@ def main():
     )
     apply_tr_theme()
 
-    tabela_cfop = carregar_tabela_cfop_oficial()
+    # Carrega as duas tabelas do arquivo do repositório
+    tabela_cfop, tabela_flags = carregar_tabela_cfop_oficial()
 
     st.markdown(
         f"""
@@ -895,7 +1006,12 @@ def main():
         )
         st.markdown("---")
         if tabela_cfop:
-            st.success(f"✅ {len(tabela_cfop)} CFOPs carregados\n(Receita Federal)")
+            n_dev_total = sum(1 for f in tabela_flags.values() if f.get('indDevol') == 1)
+            st.success(
+                f"✅ {len(tabela_cfop)} CFOPs carregados\n"
+                f"(Receita Federal)\n"
+                f"↩ {n_dev_total} CFOPs de devolução"
+            )
         else:
             st.warning(
                 "⚠ Arquivo `160314_Tabela_CFOP.xlsx`\nnão encontrado.\n"
@@ -919,11 +1035,13 @@ def main():
             <h4>🔹 Etapa 1 — Upload do SPED e extração de CFOPs</h4>
             <p>Faça o upload do arquivo <code>.txt</code> do SPED Fiscal e clique em
             <b>🔍 Extrair CFOPs e Gerar Planilha</b>. O XLSX gerado contém os CFOPs
-            presentes no arquivo com as <b>descrições oficiais da Receita Federal</b>.</p>
+            com as <b>descrições oficiais da Receita Federal</b> e os indicadores
+            <b>indNFe, indComunica, indTransp e indDevol</b>.</p>
 
             <h4>🔹 Etapa 2 — Preencher acumuladores</h4>
             <p>Abra o XLSX, preencha a coluna <b>ACUMULADOR</b> na aba
-            <i>Acumuladores</i> e salve.</p>
+            <i>Acumuladores</i> e salve. CFOPs marcados como <b>Devolução</b>
+            são destacados em vermelho para facilitar a identificação.</p>
 
             <h4>🔹 Etapa 3 — Converter</h4>
             <p>Faça o upload do XLSX preenchido e clique em
@@ -935,8 +1053,9 @@ def main():
                 <li>Entrada: SPED Fiscal EFD ICMS/IPI (C100/C170/C190/D100).</li>
                 <li>Saída: leiaute Domínio Sistemas (1000/1020/1030).</li>
                 <li>CFOPs sem acumulador preenchido receberão <b>9999</b>.</li>
+                <li>CFOPs com <b>indDevol=1</b> são identificados automaticamente.</li>
                 <li>Saída em <b>ANSI (Latin-1)</b>.</li>
-                <li>Descrições: fonte oficial <b>Receita Federal</b>.</li>
+                <li>Fonte das descrições e flags: <b>160314_Tabela_CFOP.xlsx</b>.</li>
             </ul>
             </div>
             """,
@@ -1025,7 +1144,7 @@ def main():
             tipos_enc  = list(parsed['por_tipo'].keys())
             st.session_state.log.append(f"Registros encontrados: {', '.join(tipos_enc)}")
 
-            cfops_dict = extrair_cfops_do_sped(parsed, st.session_state.log)
+            cfops_dict = extrair_cfops_do_sped(parsed, tabela_flags, st.session_state.log)
 
             if not cfops_dict:
                 st.session_state.log.append(
@@ -1033,15 +1152,18 @@ def main():
                     "Verifique se o arquivo é um SPED Fiscal EFD ICMS/IPI válido."
                 )
             else:
-                xlsx_bytes = gerar_xlsx_acumuladores_tr(cfops_dict, tabela_cfop)
+                xlsx_bytes = gerar_xlsx_acumuladores_tr(cfops_dict, tabela_cfop, tabela_flags)
                 nome_base  = st.session_state.arquivo_nome.replace('.txt', '')
                 nome_xlsx  = f"{nome_base}_acumuladores.xlsx"
                 st.session_state.xlsx_bytes      = xlsx_bytes
                 st.session_state.xlsx_nome       = nome_xlsx
                 st.session_state.cfops_extraidos = cfops_dict
+
+                n_dev = sum(1 for v in cfops_dict.values() if v.get('indDevol') == 1)
                 st.session_state.log.append(
-                    f"✔ {len(cfops_dict)} CFOP(s) extraído(s) com descrições "
-                    f"da Receita Federal — planilha: {nome_xlsx}"
+                    f"✔ {len(cfops_dict)} CFOP(s) extraído(s) | "
+                    f"{n_dev} de devolução (indDevol=1) | "
+                    f"Planilha: {nome_xlsx}"
                 )
 
         except Exception:
@@ -1055,11 +1177,13 @@ def main():
         cfops_dict = st.session_state.cfops_extraidos
         n_ent = sum(1 for v in cfops_dict.values() if v['tipo_operacao'] == 'Entrada')
         n_sai = sum(1 for v in cfops_dict.values() if v['tipo_operacao'] == 'Saída')
+        n_dev = sum(1 for v in cfops_dict.values() if v.get('indDevol') == 1)
 
-        col_m1, col_m2, col_m3 = st.columns(3)
+        col_m1, col_m2, col_m3, col_m4 = st.columns(4)
         col_m1.metric("CFOPs únicos", len(cfops_dict))
         col_m2.metric("Entradas",     n_ent)
         col_m3.metric("Saídas",       n_sai)
+        col_m4.metric("Devoluções",   n_dev)
 
         with st.expander("📋 CFOPs identificados no SPED", expanded=False):
             rows = [
@@ -1067,6 +1191,8 @@ def main():
                     'CFOP':           cfop,
                     'Descrição (RF)': get_descricao_cfop(cfop, tabela_cfop),
                     'Tipo':           info['tipo_operacao'],
+                    'Devolução':      '✔' if info.get('indDevol') == 1 else '',
+                    'NFe':            '✔' if info.get('indNFe')   == 1 else '',
                     'Ocorrências':    info['ocorrencias'],
                     'Registros':      ', '.join(sorted(info['registros'])),
                 }
@@ -1148,7 +1274,7 @@ def main():
             parsed  = parse_sped(content)
 
             resultado_txt, stats = converter_sped_para_dominio(
-                parsed, tabela_acum, st.session_state.log
+                parsed, tabela_acum, tabela_flags, st.session_state.log
             )
 
             resultado_bytes = encode_ansi_seguro(resultado_txt, st.session_state.log)
@@ -1171,15 +1297,16 @@ def main():
 
         stats = st.session_state.stats or {}
         st.markdown("#### 📊 Estatísticas da Conversão")
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         col1.metric("NFs Entrada",  stats.get('nf_entrada',  0))
         col2.metric("NFs Saída",    stats.get('nf_saida',    0))
-        col3.metric("Itens",        stats.get('itens',       0))
+        col3.metric("Devoluções",   stats.get('devolucoes',  0))
+        col4.metric("Itens",        stats.get('itens',       0))
 
-        col4, col5, col6 = st.columns(3)
-        col4.metric("Analíticos",   stats.get('analiticos',  0))
-        col5.metric("Transporte",   stats.get('transporte',  0))
-        col6.metric("Erros",        stats.get('erros',       0))
+        col5, col6, col7 = st.columns(3)
+        col5.metric("Analíticos",   stats.get('analiticos',  0))
+        col6.metric("Transporte",   stats.get('transporte',  0))
+        col7.metric("Erros",        stats.get('erros',       0))
 
         st.markdown("---")
 
