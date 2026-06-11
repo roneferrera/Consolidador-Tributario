@@ -1263,7 +1263,7 @@ def gerar_registros_produtos(
         ncm     = info_pl.get('ncm', '') or p.get('ncm', '') or ''
         cest    = info_pl.get('cest', '') or p.get('cest', '') or ''
 
-        # CSTs da planilha têm prioridade
+        # CSTs da planilha têm prioridade sobre o SPED
         if info_pl.get('cst_pis_entrada'):
             cst_pis    = info_pl['cst_pis_entrada']
         if info_pl.get('cst_cof_entrada'):
@@ -1273,82 +1273,94 @@ def gerar_registros_produtos(
         if info_pl.get('aliq_cofins') and info_pl['aliq_cofins'] not in ('0,0000', '0,00'):
             aliq_cof = info_pl['aliq_cofins']
 
-        # CST de saída (De-Para)
+        # ── CST de saída (De-Para Entrada → Saída) ───────────────────────
+        # Usado no campo 16 do 0110 (CST Saídas)
         cst_pis_saida    = info_pl.get('cst_pis_saida',  _cst_entrada_para_saida(cst_pis))
         cst_cofins_saida = info_pl.get('cst_cof_saida',  _cst_entrada_para_saida(cst_cofins))
 
-        # Natureza de receita (campo 18 do 0110) — busca pelo CST de saída
+        # ── CST de entrada via De-Para INVERSO (Saída → Entrada) ─────────
+        # Quando o produto tem CST de saída 01 (ou outro), o campo 3 do 0110
+        # (CST Entrada) deve ser o CST de entrada correspondente via De-Para.
+        # Isso garante que o cadastro do produto reflita corretamente o cenário
+        # fiscal de aquisição quando a origem é uma nota de saída.
+        cst_0110_entrada = _cst_saida_para_entrada_depara(cst_pis_saida)
+
+        # ── Natureza de receita (campo 18 do 0110) ────────────────────────
+        # Campo unificado: mesma natureza para PIS e COFINS.
         nat_receita = ''
-        chave_nat = f"cst_{cst_pis_saida}_nat_pis"
-        if chave_nat in cfg_nat and cfg_nat[chave_nat]:
-            nat_receita = cfg_nat[chave_nat]
-        elif f"cst_{cst_cofins_saida}_nat_cofins" in cfg_nat:
+        # Tenta chave unificada primeiro, depois chave legada
+        chave_nat_unif = f"cst_{cst_pis_saida}_nat"
+        chave_nat_leg  = f"cst_{cst_pis_saida}_nat_pis"
+        if cfg_nat.get(chave_nat_unif):
+            nat_receita = cfg_nat[chave_nat_unif]
+        elif cfg_nat.get(chave_nat_leg):
+            nat_receita = cfg_nat[chave_nat_leg]
+        elif cfg_nat.get(f"cst_{cst_cofins_saida}_nat"):
+            nat_receita = cfg_nat[f"cst_{cst_cofins_saida}_nat"]
+        elif cfg_nat.get(f"cst_{cst_cofins_saida}_nat_cofins"):
             nat_receita = cfg_nat[f"cst_{cst_cofins_saida}_nat_cofins"]
+
+        # ── Vínculo e Base do Crédito (campo 4 e 5 do 0110) ─────────────
+        base_cred = cfg_nat.get(f"cst_{cst_pis_saida}_base",
+                    cfg_nat.get(f"cst_{cst_pis_saida}_base_pis", ''))
+        vinc_cred = cfg_nat.get(f"cst_{cst_pis_saida}_vinc",
+                    cfg_nat.get(f"cst_{cst_pis_saida}_vinc_pis", ''))
 
         # CBENEF → campo 91 do 0100 (Identificador, máx 60 chars)
         cbenef = info_pl.get('cbenef', '') or cb_map.get(cod, '')
 
         # ── Registro 0100 ─────────────────────────────────────────────────
-        # Campos 1-27 conforme leiaute fornecido
-        # Campos 28-90 = campos estaduais/específicos (vazios)
-        # Campo 91 = Identificador (CBENEF)
         saida.write(
             f"|0100|{cod}|{descr}|||{ncm}||||{unid}|N|O|||"
             f"|N||0,000|0,00000|0,000|{cst_icms}|{aliq_icms}|{aliq_ipi}|M||N|"
-            f"{'|' * 63}"   # campos 28-90 = 63 campos vazios
-            f"{cest}|"      # campo 89 = CEST
-            f"|"            # campo 90 = Registro de Exportação (RE)
-            f"{cbenef}|\n"  # campo 91 = Identificador (CBENEF)
+            f"{'|' * 63}"
+            f"{cest}|"
+            f"|"
+            f"{cbenef}|\n"
         )
         n_prod += 1
 
         # ── Registro 0110 ─────────────────────────────────────────────────
-        # Leiaute 0110 fornecido:
-        # Campo 1  = 0110 | Campo 2 = Descrição | Campo 3 = CST Entrada
-        # Campo 4  = Vínculo do Crédito | Campo 5 = Base do Crédito
-        # Campo 6  = Aproveitar crédito proporcional (N)
-        # Campo 7  = Crédito por alíquota diferenciada Entradas (N)
-        # Campo 8  = Alíquota PIS Entradas | Campo 9 = Alíquota COFINS Entradas
-        # Campo 10 = Crédito por unidade de medida (N)
-        # Campo 11 = Unidade tributada diferente (N)
-        # Campo 12 = Unidade tributável | Campo 13 = Fator de conversão
-        # Campo 14 = Valor PIS Entradas | Campo 15 = Valor COFINS Entradas
-        # Campo 16 = CST Saídas ← De-Para do CST de entrada
-        # Campo 17 = Tipo de contribuição (N=Não cumulativo, C=Cumulativo, S=Sem incidência)
-        # Campo 18 = Natureza de receita ← preenchida pela config do usuário
-        # Campo 19 = Código de recolhimento PIS Saída
-        # Campo 20 = Código de recolhimento COFINS Saída
-        # Campo 21 = Débito por alíquota diferenciada Saídas (N)
-        # Campo 22 = Alíquota PIS Saídas | Campo 23 = Alíquota COFINS Saídas
-        # Campo 24 = Débito por unidade de medida (N)
-        # Campo 25 = Unidade tributada diferente Saídas (N)
-        # Campo 26 = Unidade tributável Saídas | Campo 27 = Fator de conversão Saídas
-        # Campo 28 = Valor PIS Saídas | Campo 29 = Valor COFINS Saídas
-        # Campo 30 = Tabela SPED | Campo 31 = Marca/Grupo SPED
-        # Campos 32-40 = outros campos conforme leiaute
-        # Campos 34 = ICMS CST/CSOSN Entradas | Campo 35 = ICMS CST/CSOSN Saídas
-        # Campo 36 = ICMS Alíquota | Campo 37 = IPI CST Entradas | Campo 38 = IPI CST Saídas
-        # Campo 39 = IPI Periodicidade | Campo 40 = IPI Alíquota
-        # Campos 41+ = Simples Nacional e outros
+        # Campo 3  = CST Entrada (De-Para inverso: CST saída → CST entrada)
+        # Campo 4  = Vínculo do Crédito
+        # Campo 5  = Base do Crédito
+        # Campo 16 = CST Saídas (De-Para direto: CST entrada → CST saída)
+        # Campo 18 = Natureza de receita (unificada PIS e COFINS)
 
-        # Determina tipo de contribuição pelo CST de saída
+        # Tipo de contribuição pelo CST de saída
         tipo_contrib = 'N'  # Não cumulativo padrão
         try:
             n_cst_saida = int(cst_pis_saida)
-            if n_cst_saida in (6, 7, 8, 9): tipo_contrib = 'S'  # Sem incidência
-        except ValueError: pass
+            if n_cst_saida in (6, 7, 8, 9):
+                tipo_contrib = 'S'  # Sem incidência
+        except ValueError:
+            pass
 
         saida.write(
-            f"|0110|Vigência||01|N|N|"
-            # campo 8=aliq_pis_ent | campo 9=aliq_cof_ent
-            f"{aliq_pis}|{aliq_cof}|N|N|||"
+            f"|0110|Vigência|"
+            # campo 3 = CST Entrada via De-Para inverso (saída → entrada)
+            f"{cst_0110_entrada}|"
+            # campo 4 = Vínculo do Crédito
+            f"{vinc_cred}|"
+            # campo 5 = Base do Crédito
+            f"{base_cred}|"
+            # campo 6 = Aproveitar crédito proporcional (N)
+            f"N|"
+            # campo 7 = Crédito por alíquota diferenciada Entradas (N)
+            f"N|"
+            # campos 8-9 = Alíquota PIS/COFINS Entradas
+            f"{aliq_pis}|{aliq_cof}|"
+            # campo 10 = Crédito por unidade de medida (N)
+            f"N|"
+            # campo 11 = Unidade tributada diferente (N)
+            f"N|||"
             # campos 14-15 = valor PIS/COFINS entradas
             f"0,0000|0,0000|"
-            # campo 16 = CST Saídas (De-Para)
+            # campo 16 = CST Saídas (De-Para direto)
             f"{cst_pis_saida}|"
             # campo 17 = Tipo de contribuição
             f"{tipo_contrib}|"
-            # campo 18 = Natureza de receita
+            # campo 18 = Natureza de receita (unificada)
             f"{nat_receita}|"
             # campos 19-20 = cod recolhimento PIS/COFINS saída
             f"||"
