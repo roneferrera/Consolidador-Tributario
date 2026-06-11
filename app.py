@@ -18,7 +18,6 @@ NOME_IMP_XLSX   = "Impostos.xlsx"
 
 # ==============================
 # MAPEAMENTO FIXO: nome/fragmento → código Domínio
-# Usado como fallback se a planilha não carregar
 # ==============================
 IMPOSTOS_FALLBACK = {
     'ICMS':                     1,
@@ -50,36 +49,20 @@ IMPOSTOS_FALLBACK = {
 
 # ==============================
 # ALÍQUOTAS PIS/COFINS → CÓDIGO DOMÍNIO
-# Regra: alíquota determina regime (cumulativo x não cumulativo)
 # ==============================
-# Tolerância para comparação de float
 _ALIQ_TOL = 0.001
-
-# Mapa: (alíquota_percentual, tolerância) → código Domínio
-# Formato: (valor_central, tolerância) → codigo
 ALIQ_PIS_COFINS = {
-    # PIS
-    'PIS': [
-        (0.65,  _ALIQ_TOL,  4),   # PIS Cumulativo
-        (1.65,  _ALIQ_TOL, 17),   # PIS Não Cumulativo
-    ],
-    # COFINS
-    'COFINS': [
-        (3.00,  _ALIQ_TOL,  5),   # COFINS Cumulativo
-        (7.60,  _ALIQ_TOL, 19),   # COFINS Não Cumulativo
-    ],
+    'PIS':    [(0.65, _ALIQ_TOL,  4), (1.65, _ALIQ_TOL, 17)],
+    'COFINS': [(3.00, _ALIQ_TOL,  5), (7.60, _ALIQ_TOL, 19)],
 }
 
 
 def _aliq_float(valor: str) -> float:
-    """Converte string de alíquota para float, tratando vírgula e ponto."""
     v = valor.strip().replace(',', '.')
     if not v:
         return 0.0
     try:
         f = float(v)
-        # Se vier como decimal (ex: 0.0065) converte para percentual (0.65)
-        # Heurística: se o valor for < 0.20 e > 0, assume que é fração → multiplica por 100
         if 0 < f < 0.20:
             f = round(f * 100, 6)
         return f
@@ -88,33 +71,34 @@ def _aliq_float(valor: str) -> float:
 
 
 def get_codigo_pis(aliq_str: str, por_nome: dict) -> int:
-    """
-    Retorna o código Domínio do PIS com base na alíquota:
-      0,65% → PIS Cumulativo      (código 4)
-      1,65% → PIS Não Cumulativo  (código 17)
-    Se não reconhecer a alíquota, usa o código genérico de PIS.
-    """
     aliq = _aliq_float(aliq_str)
     for (central, tol, cod) in ALIQ_PIS_COFINS['PIS']:
         if abs(aliq - central) <= tol:
             return cod
-    # Fallback: código genérico PIS
     return get_codigo_imposto('PIS', por_nome, 4)
 
 
 def get_codigo_cofins(aliq_str: str, por_nome: dict) -> int:
-    """
-    Retorna o código Domínio do COFINS com base na alíquota:
-      3,00% → COFINS Cumulativo      (código 5)
-      7,60% → COFINS Não Cumulativo  (código 19)
-    Se não reconhecer a alíquota, usa o código genérico de COFINS.
-    """
     aliq = _aliq_float(aliq_str)
     for (central, tol, cod) in ALIQ_PIS_COFINS['COFINS']:
         if abs(aliq - central) <= tol:
             return cod
-    # Fallback: código genérico COFINS
     return get_codigo_imposto('COFINS', por_nome, 5)
+
+
+# ==============================
+# CONVERSÃO DE DATA SPED → DOMÍNIO
+# SPED:    DDMMAAAA  →  Domínio: DD/MM/AAAA
+# ==============================
+def converter_data(data_sped: str) -> str:
+    """
+    Converte data do formato SPED (DDMMAAAA) para o formato Domínio (DD/MM/AAAA).
+    Aceita também DDMMAAAA sem separador e DD/MM/AAAA (já formatado).
+    """
+    d = data_sped.strip().replace('/', '').replace('-', '')
+    if len(d) == 8 and d.isdigit():
+        return f"{d[0:2]}/{d[2:4]}/{d[4:8]}"
+    return data_sped  # retorna como veio se não reconhecer
 
 
 # ==============================
@@ -214,18 +198,14 @@ def carregar_tabela_impostos() -> tuple:
     try:
         df = pd.read_excel(caminho, dtype=str)
         df.columns = [str(c).strip().upper() for c in df.columns]
-
         col_cod  = next((c for c in df.columns if 'CÓD' in c or 'COD' in c or c == 'CÓDIGO'), None)
         col_nome = next((c for c in df.columns if 'NOME' in c), None)
-
         if col_cod is None or col_nome is None:
             if len(df.columns) >= 2:
-                col_cod  = df.columns[0]
-                col_nome = df.columns[1]
+                col_cod, col_nome = df.columns[0], df.columns[1]
             else:
                 for nome, cod in IMPOSTOS_FALLBACK.items():
-                    por_codigo[cod] = nome
-                    por_nome[nome.upper()] = cod
+                    por_codigo[cod] = nome; por_nome[nome.upper()] = cod
                 return por_codigo, por_nome
 
         for _, row in df.iterrows():
@@ -237,13 +217,11 @@ def carregar_tabela_impostos() -> tuple:
                 cod = int(raw_cod)
             except ValueError:
                 continue
-            por_codigo[cod]        = nome
-            por_nome[nome.upper()] = cod
-
-    except Exception:
-        for nome, cod in IMPOSTOS_FALLBACK.items():
             por_codigo[cod] = nome
             por_nome[nome.upper()] = cod
+    except Exception:
+        for nome, cod in IMPOSTOS_FALLBACK.items():
+            por_codigo[cod] = nome; por_nome[nome.upper()] = cod
 
     return por_codigo, por_nome
 
@@ -273,14 +251,12 @@ def carregar_tabela_cfop_oficial() -> tuple:
     try:
         df = pd.read_excel(caminho, sheet_name="CFOP", dtype=str)
         df.columns = [str(c).strip().upper() for c in df.columns]
-
         col_cfop  = next((c for c in df.columns if c == 'CFOP'), None)
         col_descr = next((c for c in df.columns if 'DESCRI' in c or 'RESUMIDA' in c), None)
         col_nfe   = next((c for c in df.columns if 'INDNFE'      in c.replace(' ', '').upper()), None)
         col_com   = next((c for c in df.columns if 'INDCOMUNICA' in c.replace(' ', '').upper()), None)
         col_trp   = next((c for c in df.columns if 'INDTRANSP'   in c.replace(' ', '').upper()), None)
         col_dev   = next((c for c in df.columns if 'INDDEVOL'    in c.replace(' ', '').upper()), None)
-
         if col_cfop is None or col_descr is None:
             return tabela_descr, tabela_flags
 
@@ -357,8 +333,25 @@ def _c(campos: list, idx: int, default: str = '') -> str:
 # ÍNDICES SPED FISCAL
 # ==============================
 SPED_0000_CNPJ       = 6
+SPED_0000_DT_INI     = 3
+SPED_0000_DT_FIN     = 4
+
 SPED_0150_COD        = 1
 SPED_0150_CNPJ       = 4
+
+# 0200 — Cadastro de Produtos do SPED
+SPED_0200_COD_ITEM   = 1
+SPED_0200_DESCR      = 2
+SPED_0200_COD_BARRA  = 3
+SPED_0200_COD_ANT    = 4
+SPED_0200_UNID_INV   = 5
+SPED_0200_TIPO_ITEM  = 6
+SPED_0200_COD_NCM    = 7
+SPED_0200_EX_IPI     = 8
+SPED_0200_COD_GEN    = 9
+SPED_0200_COD_LST    = 10
+SPED_0200_ALIQ_ICMS  = 11
+
 SPED_C100_IND_OPER   = 1
 SPED_C100_COD_PART   = 3
 SPED_C100_COD_MOD    = 4
@@ -373,6 +366,7 @@ SPED_C100_VL_ICMS    = 21
 SPED_C100_VL_IPI     = 24
 SPED_C100_VL_PIS     = 25
 SPED_C100_VL_COFINS  = 26
+
 SPED_C170_NUM_ITEM   = 1
 SPED_C170_COD_ITEM   = 2
 SPED_C170_DESCR      = 3
@@ -404,11 +398,10 @@ SPED_C170_CST_COFINS = 29
 SPED_C170_VL_BC_COF  = 30
 SPED_C170_ALIQ_COF   = 31
 SPED_C170_VL_COFINS  = 33
+
 SPED_C190_CFOP       = 2
 SPED_C190_ALIQ       = 3
-SPED_C190_VL_OPR     = 4
-SPED_C190_VL_BC      = 5
-SPED_C190_VL_ICMS    = 6
+
 SPED_D100_IND_OPER   = 1
 SPED_D100_COD_PART   = 3
 SPED_D100_COD_MOD    = 4
@@ -419,6 +412,7 @@ SPED_D100_DT_DOC     = 10
 SPED_D100_VL_DOC     = 14
 SPED_D100_ALIQ       = 19
 SPED_D100_VL_ICMS    = 20
+
 SPED_H010_COD_ITEM   = 1
 SPED_H010_UNID       = 2
 SPED_H010_QTD        = 3
@@ -463,6 +457,92 @@ def extrair_cfops_do_sped(parsed: dict, tabela_flags: dict, log: list) -> dict:
     )
     log.append(f"CFOPs únicos encontrados: {len(cfops)} — {sorted(cfops.keys())}")
     return cfops
+
+
+# ==============================
+# EXTRAÇÃO DE PRODUTOS DO SPED (0200 + C170)
+# ==============================
+def extrair_produtos_do_sped(parsed: dict, log: list) -> dict:
+    """
+    Extrai produtos do SPED:
+    - Prioridade: registro 0200 (cadastro oficial de produtos do SPED)
+    - Complemento: C170 (itens das notas — captura cod_item + descr + unid + alíquotas)
+    Retorna dict { cod_item: { descr, unid, ncm, aliq_icms, aliq_ipi,
+                               cst_icms, cst_ipi, cst_pis, cst_cofins,
+                               aliq_pis, aliq_cofins } }
+    """
+    produtos = {}
+
+    # ── 1. Lê registro 0200 (fonte primária) ─────────────────────────────
+    if '0200' in parsed['por_tipo']:
+        for campos, _ in parsed['por_tipo']['0200']:
+            cod  = _c(campos, SPED_0200_COD_ITEM).strip()
+            if not cod: continue
+            produtos[cod] = {
+                'descr':      _c(campos, SPED_0200_DESCR),
+                'unid':       _c(campos, SPED_0200_UNID_INV),
+                'ncm':        _c(campos, SPED_0200_COD_NCM),
+                'tipo_item':  _c(campos, SPED_0200_TIPO_ITEM),
+                'aliq_icms':  _c(campos, SPED_0200_ALIQ_ICMS) or '0,00',
+                'aliq_ipi':   '0,00',
+                'cst_icms':   '',
+                'cst_ipi':    '',
+                'cst_pis':    '',
+                'cst_cofins': '',
+                'aliq_pis':   '0,00',
+                'aliq_cofins':'0,00',
+            }
+        log.append(f"Produtos carregados do 0200: {len(produtos)}")
+
+    # ── 2. Complementa / cria com dados do C170 ──────────────────────────
+    itens_c170 = 0
+    for tipo, campos, _ in parsed['linhas_ordenadas']:
+        if tipo != 'C170': continue
+        cod  = _c(campos, SPED_C170_COD_ITEM).strip()
+        if not cod: continue
+        itens_c170 += 1
+
+        aliq_icms_c170  = _c(campos, SPED_C170_ALIQ_ICMS)  or '0,00'
+        aliq_ipi_c170   = _c(campos, SPED_C170_ALIQ_IPI)   or '0,00'
+        aliq_pis_c170   = _c(campos, SPED_C170_ALIQ_PIS)   or '0,00'
+        aliq_cof_c170   = _c(campos, SPED_C170_ALIQ_COF)   or '0,00'
+        cst_icms_c170   = _c(campos, SPED_C170_CST_ICMS)
+        cst_ipi_c170    = _c(campos, SPED_C170_CST_IPI)
+        cst_pis_c170    = _c(campos, SPED_C170_CST_PIS)
+        cst_cofins_c170 = _c(campos, SPED_C170_CST_COFINS)
+
+        if cod not in produtos:
+            # produto não estava no 0200 — cria com dados do C170
+            produtos[cod] = {
+                'descr':      _c(campos, SPED_C170_DESCR),
+                'unid':       _c(campos, SPED_C170_UNID),
+                'ncm':        '',
+                'tipo_item':  '00',
+                'aliq_icms':  aliq_icms_c170,
+                'aliq_ipi':   aliq_ipi_c170,
+                'cst_icms':   cst_icms_c170,
+                'cst_ipi':    cst_ipi_c170,
+                'cst_pis':    cst_pis_c170,
+                'cst_cofins': cst_cofins_c170,
+                'aliq_pis':   aliq_pis_c170,
+                'aliq_cofins':aliq_cof_c170,
+            }
+        else:
+            # complementa campos que vieram vazios do 0200
+            p = produtos[cod]
+            if not p.get('cst_icms'):   p['cst_icms']   = cst_icms_c170
+            if not p.get('cst_ipi'):    p['cst_ipi']    = cst_ipi_c170
+            if not p.get('cst_pis'):    p['cst_pis']    = cst_pis_c170
+            if not p.get('cst_cofins'): p['cst_cofins'] = cst_cofins_c170
+            if p.get('aliq_ipi',   '0,00') in ('', '0,00', '0'): p['aliq_ipi']    = aliq_ipi_c170
+            if p.get('aliq_pis',   '0,00') in ('', '0,00', '0'): p['aliq_pis']    = aliq_pis_c170
+            if p.get('aliq_cofins','0,00') in ('', '0,00', '0'): p['aliq_cofins'] = aliq_cof_c170
+            if p.get('aliq_icms',  '0,00') in ('', '0,00', '0'): p['aliq_icms']   = aliq_icms_c170
+            if not p.get('unid'):  p['unid']  = _c(campos, SPED_C170_UNID)
+            if not p.get('descr'): p['descr'] = _c(campos, SPED_C170_DESCR)
+
+    log.append(f"Itens C170 processados: {itens_c170} | Total produtos únicos: {len(produtos)}")
+    return produtos
 
 
 # ==============================
@@ -735,11 +815,9 @@ def carregar_acumuladores(arquivo_bytes: bytes, nome_arquivo: str, log: list) ->
             raw_cfop = ''.join(filter(str.isdigit, raw_cfop))
             if not raw_cfop: continue
             cfop = raw_cfop.zfill(4)
-
             raw_acum = str(row['ACUMULADOR']).strip()
             if raw_acum.endswith('.0'): raw_acum = raw_acum[:-2]
             acum = raw_acum.strip()
-
             if cfop == '0000': continue
             if not acum or acum.upper() in ('NAN', '', '0'): continue
             tabela[cfop] = acum
@@ -768,8 +846,98 @@ def get_acumulador(cfop: str, tabela: dict, nao_mapeados: set) -> str:
 
 
 # ==============================
+# GERAÇÃO DOS REGISTROS 0100 + 0110 (Cadastro de Produtos Domínio)
+# ==============================
+def gerar_registros_produtos(produtos: dict, dt_ini: str, por_nome_imp: dict, log: list) -> str:
+    """
+    Gera os registros 0100 (cadastro) e 0110 (vigência) para cada produto.
+
+    Leiaute 0100 (campos relevantes):
+    |0100|COD|DESCR|NBM|NCM|NCM_EXT|BARRAS|COD_IMP_IMP|COD_GRUPO|UNID|
+     UNID_INV_DIF|TIPO_PROD|TIPO_ARMA|DESCR_ARMA|TIPO_MED|SERV_ISSQN|
+     COD_CHASSI|VL_UNIT|QTD_INI|VL_INI|CST_ICMS|ALIQ_ICMS|ALIQ_IPI|
+     PERIOD_IPI|OBS|EXPORTA_DNF|EX_TIPI|...(campos opcionais vazios)...|
+
+    Leiaute 0110 (campos relevantes):
+    |0110|DESCR|CST_ENT|VINCULO_CRED|BASE_CRED|CRED_PROP|CRED_ALQ_DIF|
+     ALIQ_PIS_ENT|ALIQ_COF_ENT|CRED_UNI|UNID_TRI_DIF|UNID_TRI|FAT_CONV|
+     VL_PIS_ENT|VL_COF_ENT|CST_SAI|TIPO_CONTRIB|NAT_REC|...|
+     CST_IPI_ENT|CST_IPI_SAI|PERIOD_IPI|ALIQ_IPI|...|
+    """
+    saida = StringIO()
+    n_prod = 0
+    n_vig  = 0
+
+    for cod, p in sorted(produtos.items()):
+        descr      = (p.get('descr') or '').replace('|', ' ')[:60]
+        unid       = p.get('unid', 'UN') or 'UN'
+        ncm        = p.get('ncm', '') or ''
+        aliq_icms  = p.get('aliq_icms', '0,00') or '0,00'
+        aliq_ipi   = p.get('aliq_ipi',  '0,00') or '0,00'
+        cst_icms   = p.get('cst_icms',  '') or ''
+        cst_ipi    = p.get('cst_ipi',   '') or ''
+        cst_pis    = p.get('cst_pis',   '') or ''
+        cst_cofins = p.get('cst_cofins','') or ''
+        aliq_pis   = p.get('aliq_pis',  '0,00') or '0,00'
+        aliq_cof   = p.get('aliq_cofins','0,00') or '0,00'
+
+        # ── Registro 0100 ─────────────────────────────────────────────────
+        # Campos: 1=0100 | 2=COD | 3=DESCR | 4=NBM | 5=NCM | 6=NCM_EXT |
+        #  7=BARRAS | 8=COD_IMP_IMP | 9=COD_GRUPO | 10=UNID |
+        #  11=UNID_INV_DIF(N) | 12=TIPO_PROD(O) | 13=TIPO_ARMA | 14=DESCR_ARMA |
+        #  15=TIPO_MED | 16=SERV_ISSQN(N) | 17=COD_CHASSI |
+        #  18=VL_UNIT(0,000) | 19=QTD_INI(0,00000) | 20=VL_INI(0,000) |
+        #  21=CST_ICMS | 22=ALIQ_ICMS | 23=ALIQ_IPI | 24=PERIOD_IPI(M) |
+        #  25=OBS | 26=EXPORTA_DNF(N) | 27=EX_TIPI |
+        #  28..91 = campos opcionais vazios
+        campos_opcionais = '|' * 64  # campos 28 a 91 vazios
+
+        saida.write(
+            f"|0100|{cod}|{descr}|||{ncm}||||{unid}|N|O|||"
+            f"|N||0,000|0,00000|0,000|{cst_icms}|{aliq_icms}|{aliq_ipi}|M||N|"
+            f"{campos_opcionais}\n"
+        )
+        n_prod += 1
+
+        # ── Registro 0110 (vigência) ───────────────────────────────────────
+        # Campos: 1=0110 | 2=DESCR_VIG | 3=CST_ENT | 4=VINCULO_CRED |
+        #  5=BASE_CRED | 6=CRED_PROP(N) | 7=CRED_ALQ_DIF(N) |
+        #  8=ALIQ_PIS_ENT | 9=ALIQ_COF_ENT | 10=CRED_UNI(N) |
+        #  11=UNID_TRI_DIF(N) | 12=UNID_TRI | 13=FAT_CONV |
+        #  14=VL_PIS_ENT | 15=VL_COF_ENT |
+        #  16=CST_SAI | 17=TIPO_CONTRIB | 18=NAT_REC |
+        #  19=COD_REC_PIS_SAI | 20=COD_REC_COF_SAI |
+        #  21=DEB_ALQ_DIF(N) | 22=ALIQ_PIS_SAI | 23=ALIQ_COF_SAI |
+        #  24=DEB_UNI(N) | 25=UNID_TRI_DIF_SAI(N) | 26=UNID_TRI_SAI |
+        #  27=FAT_CONV_SAI | 28=VL_PIS_SAI | 29=VL_COF_SAI |
+        #  30=TABELA_SPED | 31=MARCA_SPED |
+        #  32=PIS_CUM(N) | 33=COF_CUM(N) |
+        #  34=CST_ICMS_ENT | 35=CST_ICMS_SAI | 36=ALIQ_ICMS |
+        #  37=CST_IPI_ENT | 38=CST_IPI_SAI | 39=PERIOD_IPI(M) | 40=ALIQ_IPI |
+        #  41..70 = campos adicionais vazios
+        campos_adicionais_0110 = '|' * 30  # campos 41-70
+
+        saida.write(
+            f"|0110|Vigência||01|N|N|"
+            f"{aliq_pis}|{aliq_cof}|N|N|||"
+            f"0,0000|0,0000|"
+            f"{cst_cofins}|N||||||"
+            f"N|{aliq_pis}|{aliq_cof}|N|N|||"
+            f"0,0000|0,0000|||"
+            f"N|N|"
+            f"{cst_icms}|{cst_icms}|{aliq_icms}|"
+            f"{cst_ipi}|{cst_ipi}|M|{aliq_ipi}|"
+            f"{campos_adicionais_0110}\n"
+        )
+        n_vig += 1
+
+    log.append(f"Produtos gerados: {n_prod} registros 0100 + {n_vig} registros 0110")
+    return saida.getvalue()
+
+
+# ==============================
 # CONVERSÃO SPED FISCAL → DOMÍNIO SISTEMAS
-# V2.6 — PIS/COFINS com código por alíquota (cumulativo x não cumulativo)
+# V2.6 — com 0100/0110 (produtos), datas corrigidas, PIS/COFINS por alíquota
 # ==============================
 def converter_sped_para_dominio(
     parsed: dict,
@@ -783,29 +951,29 @@ def converter_sped_para_dominio(
     stats = {
         'nf_entrada': 0, 'nf_saida': 0, 'itens': 0,
         'analiticos': 0, 'transporte': 0, 'inventario': 0,
-        'devolucoes': 0, 'erros': 0,
+        'devolucoes': 0, 'produtos': 0, 'erros': 0,
     }
 
-    # ── Códigos de impostos fixos (ICMS, IPI, ST) ─────────────────────────
-    COD_ICMS    = get_codigo_imposto('ICMS',             por_nome_imp, 1)
-    COD_IPI     = get_codigo_imposto('IPI',              por_nome_imp, 2)
-    COD_ISS     = get_codigo_imposto('ISS',              por_nome_imp, 3)
-    COD_ST      = get_codigo_imposto('SUBST. TRIBUTARIA',por_nome_imp, 9)
-    COD_ICMS_ST = get_codigo_imposto('ICMS RETIDO',      por_nome_imp, 11)
-
-    # ── PIS/COFINS: código resolvido por alíquota em tempo de execução ─────
-    # get_codigo_pis(aliq_str, por_nome_imp)   → 4 (cumulativo) ou 17 (não cumulativo)
-    # get_codigo_cofins(aliq_str, por_nome_imp) → 5 (cumulativo) ou 19 (não cumulativo)
+    # ── Códigos de impostos fixos ─────────────────────────────────────────
+    COD_ICMS    = get_codigo_imposto('ICMS',              por_nome_imp, 1)
+    COD_IPI     = get_codigo_imposto('IPI',               por_nome_imp, 2)
+    COD_ISS     = get_codigo_imposto('ISS',               por_nome_imp, 3)
+    COD_ST      = get_codigo_imposto('SUBST. TRIBUTARIA', por_nome_imp, 9)
+    COD_ICMS_ST = get_codigo_imposto('ICMS RETIDO',       por_nome_imp, 11)
 
     log.append(
         f"Códigos fixos: ICMS={COD_ICMS} | IPI={COD_IPI} | ISS={COD_ISS} | "
         f"ST={COD_ST} | ICMS_ST={COD_ICMS_ST}"
     )
     log.append(
-        "PIS/COFINS: código resolvido por alíquota — "
-        "0,65%→PIS Cum.(4) | 1,65%→PIS N.Cum.(17) | "
-        "3,00%→COFINS Cum.(5) | 7,60%→COFINS N.Cum.(19)"
+        "PIS/COFINS por alíquota: 0,65%→4 | 1,65%→17 | 3,00%→5 | 7,60%→19"
     )
+
+    # ── Data de início do período (para vigência dos produtos) ────────────
+    dt_ini_sped = ''
+    if '0000' in parsed['por_tipo']:
+        campos_0000, _ = parsed['por_tipo']['0000'][0]
+        dt_ini_sped = _c(campos_0000, SPED_0000_DT_INI)
 
     # ── 0000 ──────────────────────────────────────────────────────────────
     if '0000' in parsed['por_tipo']:
@@ -822,6 +990,15 @@ def converter_sped_para_dominio(
         for campos, _ in parsed['por_tipo']['0150']:
             participantes[_c(campos, SPED_0150_COD)] = campos
         log.append(f"Participantes carregados: {len(participantes)}")
+
+    # ── Extrai e gera cadastro de produtos (0100 + 0110) ──────────────────
+    produtos = extrair_produtos_do_sped(parsed, log)
+    if produtos:
+        bloco_produtos = gerar_registros_produtos(produtos, dt_ini_sped, por_nome_imp, log)
+        saida.write(bloco_produtos)
+        stats['produtos'] = len(produtos)
+    else:
+        log.append("AVISO: Nenhum produto encontrado no SPED (0200/C170).")
 
     # ── Hierarquia C100 → C170 → C190 ────────────────────────────────────
     blocos_c    = []
@@ -848,8 +1025,9 @@ def converter_sped_para_dominio(
             serie    = _c(campos_c100, SPED_C100_SER)
             num_doc  = _c(campos_c100, SPED_C100_NUM_DOC)
             chv_nfe  = _c(campos_c100, SPED_C100_CHV_NFE)
-            dt_doc   = _c(campos_c100, SPED_C100_DT_DOC)
-            dt_es    = _c(campos_c100, SPED_C100_DT_ES)
+            # ── CORREÇÃO DA DATA ──────────────────────────────────────────
+            dt_doc   = converter_data(_c(campos_c100, SPED_C100_DT_DOC))
+            dt_es    = converter_data(_c(campos_c100, SPED_C100_DT_ES))
             vl_doc   = _c(campos_c100, SPED_C100_VL_DOC)
             vl_icms  = _c(campos_c100, SPED_C100_VL_ICMS)
 
@@ -895,68 +1073,50 @@ def converter_sped_para_dominio(
                 vl_desc_i = _c(campos_c170, SPED_C170_VL_DESC)   or '0,00'
                 cfop_item = _c(campos_c170, SPED_C170_CFOP)
 
-                # ── ICMS ──────────────────────────────────────────────────
                 vl_bc_icms   = _c(campos_c170, SPED_C170_VL_BC)       or '0,00'
                 aliq_icms    = _c(campos_c170, SPED_C170_ALIQ_ICMS)   or '0,00'
                 vl_icms_i    = _c(campos_c170, SPED_C170_VL_ICMS)     or '0,00'
-
-                # ── ICMS-ST ───────────────────────────────────────────────
                 vl_bc_st     = _c(campos_c170, SPED_C170_VL_BC_ST)    or '0,00'
                 aliq_st      = _c(campos_c170, SPED_C170_ALIQ_ST)     or '0,00'
                 vl_icms_st   = _c(campos_c170, SPED_C170_VL_ICMS_ST)  or '0,00'
-
-                # ── IPI ───────────────────────────────────────────────────
                 vl_bc_ipi    = _c(campos_c170, SPED_C170_VL_BC_IPI)   or '0,00'
                 aliq_ipi     = _c(campos_c170, SPED_C170_ALIQ_IPI)    or '0,00'
                 vl_ipi       = _c(campos_c170, SPED_C170_VL_IPI)      or '0,00'
 
-                # ── PIS — alíquota determina código ───────────────────────
+                # PIS — código por alíquota
                 vl_bc_pis    = _c(campos_c170, SPED_C170_VL_BC_PIS)   or '0,00'
                 aliq_pis     = _c(campos_c170, SPED_C170_ALIQ_PIS)    or '0,00'
                 vl_pis       = _c(campos_c170, SPED_C170_VL_PIS)      or '0,00'
-                # V2.6: resolve código PIS pela alíquota
                 cod_pis      = get_codigo_pis(aliq_pis, por_nome_imp)
 
-                # ── COFINS — alíquota determina código ────────────────────
+                # COFINS — código por alíquota
                 vl_bc_cof    = _c(campos_c170, SPED_C170_VL_BC_COF)   or '0,00'
                 aliq_cof     = _c(campos_c170, SPED_C170_ALIQ_COF)    or '0,00'
                 vl_cofins    = _c(campos_c170, SPED_C170_VL_COFINS)   or '0,00'
-                # V2.6: resolve código COFINS pela alíquota
                 cod_cofins   = get_codigo_cofins(aliq_cof, por_nome_imp)
 
-                # ── Valor unitário ────────────────────────────────────────
                 try:
                     vl_unit = f"{float(vl_item.replace(',', '.')) / float(qtd.replace(',', '.')):.3f}".replace('.', ',')
                 except Exception:
                     vl_unit = vl_item
 
-                # ── Imposto principal do item (ICMS-ST > ICMS > IPI) ──────
-                def _val(s): 
+                def _val(s):
                     try: return float(s.replace(',', '.'))
                     except: return 0.0
 
                 if _val(vl_icms_st) > 0:
-                    cod_imp_item = COD_ICMS_ST
-                    vl_bc_princ  = vl_bc_st
-                    aliq_princ   = aliq_st
-                    vl_imp_princ = vl_icms_st
+                    cod_imp_item = COD_ICMS_ST; vl_bc_princ = vl_bc_st
+                    aliq_princ = aliq_st; vl_imp_princ = vl_icms_st
                 elif _val(vl_icms_i) > 0:
-                    cod_imp_item = COD_ICMS
-                    vl_bc_princ  = vl_bc_icms
-                    aliq_princ   = aliq_icms
-                    vl_imp_princ = vl_icms_i
+                    cod_imp_item = COD_ICMS; vl_bc_princ = vl_bc_icms
+                    aliq_princ = aliq_icms; vl_imp_princ = vl_icms_i
                 elif _val(vl_ipi) > 0:
-                    cod_imp_item = COD_IPI
-                    vl_bc_princ  = vl_bc_ipi
-                    aliq_princ   = aliq_ipi
-                    vl_imp_princ = vl_ipi
+                    cod_imp_item = COD_IPI; vl_bc_princ = vl_bc_ipi
+                    aliq_princ = aliq_ipi; vl_imp_princ = vl_ipi
                 else:
-                    cod_imp_item = COD_ICMS
-                    vl_bc_princ  = vl_bc_icms
-                    aliq_princ   = aliq_icms
-                    vl_imp_princ = vl_icms_i
+                    cod_imp_item = COD_ICMS; vl_bc_princ = vl_bc_icms
+                    aliq_princ = aliq_icms; vl_imp_princ = vl_icms_i
 
-                # ── Registro 1030 ─────────────────────────────────────────
                 saida.write(
                     f"|1030|{num_item}|{qtd}|{vl_unit}|0|0|1|{dt_doc}||"
                     f"{cod_sit}|{vl_item}|{vl_desc_i}|{vl_item}|0,00|"
@@ -985,7 +1145,7 @@ def converter_sped_para_dominio(
                 cod_sit  = _c(campos, SPED_D100_COD_SIT)
                 serie    = _c(campos, SPED_D100_SER)
                 num_doc  = _c(campos, SPED_D100_NUM_DOC)
-                dt_doc   = _c(campos, SPED_D100_DT_DOC)
+                dt_doc   = converter_data(_c(campos, SPED_D100_DT_DOC))
                 vl_doc   = _c(campos, SPED_D100_VL_DOC)
                 aliq     = _c(campos, SPED_D100_ALIQ)
                 vl_icms  = _c(campos, SPED_D100_VL_ICMS)
@@ -1031,6 +1191,7 @@ def converter_sped_para_dominio(
         )
     log.append(
         f"Conversão concluída — "
+        f"Produtos={stats['produtos']} | "
         f"NFs entrada={stats['nf_entrada']} | NFs saída={stats['nf_saida']} | "
         f"Itens={stats['itens']} | Analíticos={stats['analiticos']} | "
         f"Devoluções={stats['devolucoes']} | "
@@ -1050,7 +1211,7 @@ def main():
     )
     apply_tr_theme()
 
-    tabela_cfop, tabela_flags   = carregar_tabela_cfop_oficial()
+    tabela_cfop, tabela_flags    = carregar_tabela_cfop_oficial()
     por_codigo_imp, por_nome_imp = carregar_tabela_impostos()
 
     st.markdown(
@@ -1070,18 +1231,18 @@ def main():
         """, unsafe_allow_html=True,
     )
 
-    # ── Sidebar ───────────────────────────────────────────────────────────
     with st.sidebar:
         st.markdown("### ℹ Sobre")
         st.markdown(f"**Versão:** {VERSAO}")
         st.markdown("**Thomson Reuters  |  Domínio Sistemas**")
         st.markdown("---")
         st.markdown("### 📥 Entrada (SPED Fiscal)")
-        st.markdown("- **0000** Abertura\n- **0150** Participantes\n- **C100** Notas Fiscais\n"
-                    "- **C170** Itens de NF\n- **C190** Analítico ICMS\n"
+        st.markdown("- **0000** Abertura\n- **0150** Participantes\n- **0200** Produtos\n"
+                    "- **C100** Notas Fiscais\n- **C170** Itens de NF\n- **C190** Analítico ICMS\n"
                     "- **D100** Conhecimento Transporte\n- **H010** Inventário\n")
         st.markdown("### 📤 Saída (Domínio Sistemas)")
-        st.markdown("- **0000** Cabeçalho\n- **1000** Nota Fiscal\n"
+        st.markdown("- **0000** Cabeçalho\n- **0100** Cadastro de Produtos\n"
+                    "- **0110** Vigência Fiscal\n- **1000** Nota Fiscal\n"
                     "- **1020** Totais da NF\n- **1030** Itens da NF\n- **9999** Encerramento\n")
         st.markdown("---")
 
@@ -1106,15 +1267,11 @@ def main():
         st.markdown("---")
         st.markdown("### 🧾 PIS/COFINS por Alíquota")
         st.markdown(
-            "| Alíquota | Imposto | Cód. |\n"
-            "|---|---|---|\n"
-            "| 0,65% | PIS Cumulativo | 4 |\n"
-            "| 1,65% | PIS Não Cum. | 17 |\n"
-            "| 3,00% | COFINS Cumulativo | 5 |\n"
-            "| 7,60% | COFINS Não Cum. | 19 |"
+            "| Alíquota | Imposto | Cód. |\n|---|---|---|\n"
+            "| 0,65% | PIS Cumulativo | 4 |\n| 1,65% | PIS Não Cum. | 17 |\n"
+            "| 3,00% | COFINS Cumulativo | 5 |\n| 7,60% | COFINS Não Cum. | 19 |"
         )
 
-    # ── Instruções ────────────────────────────────────────────────────────
     with st.expander("📖 **Instruções de Uso** — clique para expandir", expanded=False):
         st.markdown("""
             <div class="instrucoes-box">
@@ -1130,10 +1287,11 @@ def main():
             <hr>
             <h4>⚠ Observações</h4>
             <ul>
+                <li>Produtos cadastrados automaticamente via registros <b>0100 + 0110</b>
+                    (lidos do 0200 e C170 do SPED).</li>
+                <li>Datas convertidas automaticamente de DDMMAAAA para DD/MM/AAAA.</li>
+                <li>PIS/COFINS: código por alíquota (0,65%→4 | 1,65%→17 | 3,00%→5 | 7,60%→19).</li>
                 <li>CFOPs sem acumulador preenchido receberão <b>9999</b>.</li>
-                <li>PIS/COFINS: código determinado automaticamente pela alíquota
-                    (0,65%→4 | 1,65%→17 | 3,00%→5 | 7,60%→19).</li>
-                <li>ICMS, IPI, ST: código lido de <code>Impostos.xlsx</code>.</li>
                 <li>Saída em <b>ANSI (Latin-1)</b>.</li>
             </ul>
             </div>
@@ -1141,7 +1299,6 @@ def main():
 
     st.markdown("---")
 
-    # ── Session state ─────────────────────────────────────────────────────
     defaults = {
         "log":             [f"Aplicação pronta. Versão: {VERSAO} | CFOPs: {len(tabela_cfop)} | Impostos: {len(por_codigo_imp)}"],
         "resultado":       None,
@@ -1158,9 +1315,6 @@ def main():
         if k not in st.session_state:
             st.session_state[k] = v
 
-    # ════════════════════════════════════════════════════════════════════
-    # ETAPA 1
-    # ════════════════════════════════════════════════════════════════════
     st.markdown("### 🔍 Etapa 1 — Upload do SPED Fiscal e extração de CFOPs")
 
     uploaded_file = st.file_uploader(
@@ -1249,9 +1403,6 @@ def main():
 
     st.markdown("---")
 
-    # ════════════════════════════════════════════════════════════════════
-    # ETAPA 2
-    # ════════════════════════════════════════════════════════════════════
     st.markdown("### ▶ Etapa 2 — Converter com a tabela de acumuladores preenchida")
 
     arquivo_acum = st.file_uploader(
@@ -1323,18 +1474,19 @@ def main():
         stats = st.session_state.stats or {}
         st.markdown("#### 📊 Estatísticas da Conversão")
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("NFs Entrada",  stats.get('nf_entrada',  0))
-        col2.metric("NFs Saída",    stats.get('nf_saida',    0))
-        col3.metric("Devoluções",   stats.get('devolucoes',  0))
-        col4.metric("Itens",        stats.get('itens',       0))
-        col5, col6, col7 = st.columns(3)
-        col5.metric("Analíticos",   stats.get('analiticos',  0))
-        col6.metric("Transporte",   stats.get('transporte',  0))
-        col7.metric("Erros",        stats.get('erros',       0))
+        col1.metric("Produtos",     stats.get('produtos',    0))
+        col2.metric("NFs Entrada",  stats.get('nf_entrada',  0))
+        col3.metric("NFs Saída",    stats.get('nf_saida',    0))
+        col4.metric("Devoluções",   stats.get('devolucoes',  0))
+        col5, col6, col7, col8 = st.columns(4)
+        col5.metric("Itens",        stats.get('itens',       0))
+        col6.metric("Analíticos",   stats.get('analiticos',  0))
+        col7.metric("Transporte",   stats.get('transporte',  0))
+        col8.metric("Erros",        stats.get('erros',       0))
         st.markdown("---")
-        with st.expander("👁️ Prévia do arquivo gerado (primeiras 60 linhas)"):
+        with st.expander("👁️ Prévia do arquivo gerado (primeiras 80 linhas)"):
             preview = '\n'.join(
-                st.session_state.resultado.decode('latin-1', errors='replace').splitlines()[:60]
+                st.session_state.resultado.decode('latin-1', errors='replace').splitlines()[:80]
             )
             st.code(preview, language='text')
         st.download_button(
@@ -1344,7 +1496,6 @@ def main():
             mime="text/plain", use_container_width=True, type="primary",
         )
 
-    # ── Log ────────────────────────────────────────────────────────────────
     st.markdown("**Log de processamento**")
     log_texto = "\n".join(st.session_state.log)
     tem_erro  = any(str(l).startswith("ERRO") for l in st.session_state.log)
